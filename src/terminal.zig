@@ -68,8 +68,11 @@ pub const Terminal = struct {
     /// Updates the terminal dimensions.
     fn fetch_term_dimensions(self: *Self) FetchTermDimensionsError!void {
         var winsize: std.os.linux.winsize = undefined;
-        const TIOCGWINSIZ: u16 = 0x5413;
-        if (std.os.linux.ioctl(self.tty, TIOCGWINSIZ, @ptrToInt(&winsize)) < 0) {
+        // this is not ideal, but I can't find this constant anywhere in the Zig
+        // standard library and I'd rather not link against libc if I don't have
+        // to
+        const TIOCGWINSZ: u16 = 0x5413;
+        if (std.os.linux.ioctl(self.tty, TIOCGWINSZ, @ptrToInt(&winsize)) < 0) {
             return error.FetchTermDimensionsError;
         }
         self.winsize = winsize;
