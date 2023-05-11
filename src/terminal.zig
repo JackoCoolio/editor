@@ -7,9 +7,14 @@ pub const Terminal = struct {
     old_termios: std.os.termios,
     new_termios: std.os.termios,
     tty: std.os.fd_t,
+    winsize: std.os.linux.winsize,
+
+    pub const Error = FetchTermDimensionsError || InitError;
+
+    pub const InitError = std.os.OpenError || std.os.TermiosGetError || std.os.TermiosSetError || FetchTermDimensionsError;
 
     /// Initialize an undefined Terminal.
-    pub fn init_undefined(terminal: *Self) !void {
+    pub fn init_undefined(terminal: *Self) InitError!void {
         // ensure that we don't double initialize
         std.debug.assert(!terminal.initialized);
 
@@ -35,6 +40,9 @@ pub const Terminal = struct {
         try std.os.tcsetattr(tty, flags.TCSA.NOW, new_termios);
         terminal.new_termios = new_termios;
 
+        // update terminal dimensions
+        try terminal.fetch_term_dimensions();
+
         // mark as initialized, so we don't accidentally init again
         terminal.initialized = true;
     }
@@ -51,6 +59,30 @@ pub const Terminal = struct {
         var term: *Self = alloc.create(Self);
         try term.init_undefined();
         return term;
+    }
+
+    pub const FetchTermDimensionsError = error{
+        /// Check `errno` for more information.
+        IoctlError,
+    };
+    /// Updates the terminal dimensions.
+    fn fetch_term_dimensions(self: *Self) FetchTermDimensionsError!void {
+        var winsize: std.os.linux.winsize = undefined;
+        const TIOCGWINSIZ: u16 = 0x5413;
+        if (std.os.linux.ioctl(self.tty, TIOCGWINSIZ, @ptrToInt(&winsize)) < 0) {
+            return error.FetchTermDimensionsError;
+        }
+        self.winsize = winsize;
+    }
+
+    /// Returns the number of columns in this Terminal.
+    pub fn get_width(self: *const Self) u16 {
+        return self.winsize.ws_col;
+    }
+
+    /// Returns the number of rows in this Terminal.
+    pub fn get_height(self: *const Self) u16 {
+        return self.winsize.ws_row;
     }
 
     pub fn get_input(self: *const Self, buf: []u8) std.os.ReadError!usize {

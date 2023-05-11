@@ -8,6 +8,9 @@ pub fn main() !void {
     var term = try terminal.Terminal.init();
     defer term.deinit();
 
+    std.log.info("width: {}", .{term.get_width()});
+    std.log.info("height: {}", .{term.get_height()});
+
     // test
     try cursor.move_cursor(&term, 0, 0);
 
