@@ -4,14 +4,106 @@ pub const Terminal = struct {
     const Self = @This();
 
     initialized: bool,
-    old_termios: std.os.termios,
-    new_termios: std.os.termios,
+
+    // raw/cooked mode
+    cooked_termios: std.os.termios,
+    raw_termios: std.os.termios,
+    is_cooked: bool,
+
     tty: std.os.fd_t,
     winsize: std.os.linux.winsize,
 
     pub const Error = FetchTermDimensionsError || InitError;
 
-    pub const InitError = std.os.OpenError || std.os.TermiosGetError || std.os.TermiosSetError || FetchTermDimensionsError;
+    pub const InitError = std.os.OpenError || TermiosError || FetchTermDimensionsError;
+
+    pub const TermiosError = std.os.TermiosSetError || std.os.TermiosGetError;
+
+    /// Load `cooked_termios` and setup `raw_termios`.
+    /// This does not change the mode of the terminal, it only prepares the
+    /// termios structs for later.
+    fn prepareTermios(self: *Self) std.os.TermiosGetError!void {
+        // we shouldn't call this function outside of `initUndefined`
+        std.debug.assert(!self.initialized);
+
+        self.is_cooked = true;
+
+        // get the current termios
+        const old_termios = try std.os.tcgetattr(self.tty);
+
+        // save old (cooked) termios
+        self.cooked_termios = old_termios;
+
+        var new_termios = old_termios;
+
+        const flags = std.os.linux;
+
+        // source for flag descriptions: https://www.gnu.org/software/libc/manual/html_node/Terminal-Modes.html
+
+        // IGNBRK: don't ignore break condition on input (a break condition is a sequence of >8 zero bits)
+        // BRKINT: on break condition, pass it to application
+        // PARMRK: break condition is passed to application as '\0'
+        // ISTRIP: don't strip input bytes to 7 bits
+        // INLCR:  don't send LF as CR
+        // IGNCR:  don't discard CR
+        // ICRNL:  don't send CR as NL
+        // IXON:   disable C-S and C-Q as START and STOP characters
+        new_termios.iflag &= ~(flags.IGNBRK | flags.BRKINT | flags.PARMRK | flags.ISTRIP | flags.INLCR | flags.IGNCR | flags.ICRNL | flags.IXON);
+
+        // OPOST:  send characters as-is
+        new_termios.oflag &= ~(flags.OPOST);
+
+        // CSIZE:  reset size bits to zero (https://stackoverflow.com/a/31999982)
+        // PARENB: don't generate parity bit
+        new_termios.cflag &= ~(flags.CSIZE | flags.PARENB);
+        // CS8:    set byte size to 8 bits
+        new_termios.cflag |= flags.CS8;
+
+        // ECHO:   don't echo input back to terminal
+        // ECHONL: don't echo NL if ICANON is set (redundant)
+        // ICANON: don't wait for LF to read input
+        // ISIG:   ignore C-C, C-Z, C-\ (https://www.gnu.org/software/libc/manual/html_node/Signal-Characters.html)
+        // IEXTEN: disable C-V on some systems (BSD, GNU/Linux, GNU/Herd)
+        new_termios.lflag &= ~(flags.ECHO | flags.ECHONL | flags.ICANON | flags.ISIG | flags.IEXTEN);
+
+        // timeout after 0 seconds so we don't block
+        new_termios.cc[flags.V.TIME] = 0;
+
+        // just return 0 if no input was detected
+        new_termios.cc[flags.V.MIN] = 0;
+
+        self.raw_termios = new_termios;
+    }
+
+    /// Enter "raw mode" in this terminal.
+    pub fn makeRaw(self: *Self) std.os.TermiosSetError!void {
+        // we have to be initalized to do this
+        std.debug.assert(self.initialized);
+
+        // don't bother making raw terminal raw again
+        if (!self.is_cooked) {
+            return;
+        }
+
+        try std.os.tcsetattr(self.tty, std.os.linux.TCSA.FLUSH, self.raw_termios);
+
+        self.is_cooked = false;
+    }
+
+    // Enter "cooked mode" in this terminal.
+    pub fn makeCooked(self: *Self) std.os.TermiosSetError!void {
+        // we have to be initialized to do this
+        std.debug.assert(self.initialized);
+
+        // don't bother making cooked terminal cooked again
+        if (self.cooked) {
+            return;
+        }
+
+        try std.os.tcsetattr(self.tty, std.os.linux.TCSA.FLUSH, self.cooked_termios);
+
+        self.is_cooked = true;
+    }
 
     /// Initialize an undefined Terminal.
     pub fn initUndefined(terminal: *Self) InitError!void {
@@ -27,18 +119,8 @@ pub const Terminal = struct {
         // close it on err
         errdefer std.os.close(terminal.tty);
 
-        // get the current termios
-        const old_termios = try std.os.tcgetattr(terminal.tty);
-        terminal.old_termios = old_termios;
-        // zig copies this
-        var new_termios = old_termios;
-
-        const flags = std.os.linux;
-        // disable LF buffer and input echo
-        new_termios.lflag &= ~(flags.ICANON | flags.ECHO);
-
-        try std.os.tcsetattr(tty, flags.TCSA.NOW, new_termios);
-        terminal.new_termios = new_termios;
+        // prepare `cooked_termios` and `raw_termios`
+        try terminal.prepareTermios();
 
         // update terminal dimensions
         try terminal.fetchTermDimensions();
@@ -48,14 +130,14 @@ pub const Terminal = struct {
     }
 
     /// Create a new terminal.
-    pub fn init() !Self {
+    pub fn init() InitError!Self {
         var term: Self = undefined;
         try term.initUndefined();
         return term;
     }
 
     /// Create a new terminal with the given Allocator.
-    pub fn initAlloc(alloc: std.mem.Allocator) !*Self {
+    pub fn initAlloc(alloc: std.mem.Allocator) InitError!*Self {
         var term: *Self = alloc.create(Self);
         try term.initUndefined();
         return term;
@@ -65,7 +147,7 @@ pub const Terminal = struct {
         /// Check `errno` for more information.
         IoctlError,
     };
-    /// Updates the terminal dimensions.
+    /// Update the terminal dimensions.
     fn fetchTermDimensions(self: *Self) FetchTermDimensionsError!void {
         var winsize: std.os.linux.winsize = undefined;
         // this is not ideal, but I can't find this constant anywhere in the Zig
@@ -89,7 +171,6 @@ pub const Terminal = struct {
     }
 
     pub fn getInput(self: *const Self, buf: []u8) std.os.ReadError!usize {
-        std.log.info("tty is: {}", .{self.tty});
         return std.os.read(self.tty, buf);
     }
 
@@ -103,8 +184,8 @@ pub const Terminal = struct {
     /// This restores the previous termios.
     pub fn deinit(self: *Self) void {
         // restore old termios
-        std.os.tcsetattr(self.tty, std.os.linux.TCSA.NOW, self.old_termios) catch {
-            std.log.warn("unable to restore old termios", .{});
+        std.os.tcsetattr(self.tty, std.os.linux.TCSA.NOW, self.cooked_termios) catch {
+            std.log.warn("unable to restore cooked termios", .{});
         };
 
         std.os.close(self.tty);
