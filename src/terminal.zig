@@ -4,106 +4,105 @@ pub const Terminal = struct {
     const Self = @This();
 
     initialized: bool,
-
-    // raw/cooked mode
-    cooked_termios: std.os.termios,
-    raw_termios: std.os.termios,
-    is_cooked: bool,
+    termios: Termios,
 
     tty: std.os.fd_t,
     winsize: std.os.linux.winsize,
 
-    pub const Error = FetchTermDimensionsError || InitError;
+    pub const Termios = struct {
+        tty: std.os.fd_t,
+        cooked: std.os.termios,
+        raw: std.os.termios,
+        is_cooked: bool,
 
-    pub const InitError = std.os.OpenError || TermiosError || FetchTermDimensionsError;
+        pub const Error = std.os.TermiosSetError || std.os.TermiosGetError;
 
-    pub const TermiosError = std.os.TermiosSetError || std.os.TermiosGetError;
+        pub fn init(tty: std.os.fd_t) std.os.TermiosGetError!Termios {
+            // get the current termios
+            const old_termios = try std.os.tcgetattr(tty);
 
-    /// Load `cooked_termios` and setup `raw_termios`.
-    /// This does not change the mode of the terminal, it only prepares the
-    /// termios structs for later.
-    fn prepareTermios(self: *Self) std.os.TermiosGetError!void {
-        // we shouldn't call this function outside of `initUndefined`
-        std.debug.assert(!self.initialized);
+            // save old (cooked) termios
+            const cooked = old_termios;
 
-        self.is_cooked = true;
+            var new_termios = old_termios;
 
-        // get the current termios
-        const old_termios = try std.os.tcgetattr(self.tty);
+            const flags = std.os.linux;
 
-        // save old (cooked) termios
-        self.cooked_termios = old_termios;
+            // source for flag descriptions: https://www.gnu.org/software/libc/manual/html_node/Terminal-Modes.html
 
-        var new_termios = old_termios;
+            // IGNBRK: don't ignore break condition on input (a break condition is a sequence of >8 zero bits)
+            // BRKINT: on break condition, pass it to application
+            // PARMRK: break condition is passed to application as '\0'
+            // ISTRIP: don't strip input bytes to 7 bits
+            // INLCR:  don't send LF as CR
+            // IGNCR:  don't discard CR
+            // ICRNL:  don't send CR as NL
+            // IXON:   disable C-S and C-Q as START and STOP characters
+            new_termios.iflag &= ~(flags.IGNBRK | flags.BRKINT | flags.PARMRK | flags.ISTRIP | flags.INLCR | flags.IGNCR | flags.ICRNL | flags.IXON);
 
-        const flags = std.os.linux;
+            // OPOST:  send characters as-is
+            new_termios.oflag &= ~(flags.OPOST);
 
-        // source for flag descriptions: https://www.gnu.org/software/libc/manual/html_node/Terminal-Modes.html
+            // CSIZE:  reset size bits to zero (https://stackoverflow.com/a/31999982)
+            // PARENB: don't generate parity bit
+            new_termios.cflag &= ~(flags.CSIZE | flags.PARENB);
+            // CS8:    set byte size to 8 bits
+            new_termios.cflag |= flags.CS8;
 
-        // IGNBRK: don't ignore break condition on input (a break condition is a sequence of >8 zero bits)
-        // BRKINT: on break condition, pass it to application
-        // PARMRK: break condition is passed to application as '\0'
-        // ISTRIP: don't strip input bytes to 7 bits
-        // INLCR:  don't send LF as CR
-        // IGNCR:  don't discard CR
-        // ICRNL:  don't send CR as NL
-        // IXON:   disable C-S and C-Q as START and STOP characters
-        new_termios.iflag &= ~(flags.IGNBRK | flags.BRKINT | flags.PARMRK | flags.ISTRIP | flags.INLCR | flags.IGNCR | flags.ICRNL | flags.IXON);
+            // ECHO:   don't echo input back to terminal
+            // ECHONL: don't echo NL if ICANON is set (redundant)
+            // ICANON: don't wait for LF to read input
+            // ISIG:   ignore C-C, C-Z, C-\ (https://www.gnu.org/software/libc/manual/html_node/Signal-Characters.html)
+            // IEXTEN: disable C-V on some systems (BSD, GNU/Linux, GNU/Herd)
+            new_termios.lflag &= ~(flags.ECHO | flags.ECHONL | flags.ICANON | flags.ISIG | flags.IEXTEN);
 
-        // OPOST:  send characters as-is
-        new_termios.oflag &= ~(flags.OPOST);
+            // timeout after 0 seconds so we don't block
+            new_termios.cc[flags.V.TIME] = 0;
 
-        // CSIZE:  reset size bits to zero (https://stackoverflow.com/a/31999982)
-        // PARENB: don't generate parity bit
-        new_termios.cflag &= ~(flags.CSIZE | flags.PARENB);
-        // CS8:    set byte size to 8 bits
-        new_termios.cflag |= flags.CS8;
+            // just return 0 if no input was detected
+            new_termios.cc[flags.V.MIN] = 0;
 
-        // ECHO:   don't echo input back to terminal
-        // ECHONL: don't echo NL if ICANON is set (redundant)
-        // ICANON: don't wait for LF to read input
-        // ISIG:   ignore C-C, C-Z, C-\ (https://www.gnu.org/software/libc/manual/html_node/Signal-Characters.html)
-        // IEXTEN: disable C-V on some systems (BSD, GNU/Linux, GNU/Herd)
-        new_termios.lflag &= ~(flags.ECHO | flags.ECHONL | flags.ICANON | flags.ISIG | flags.IEXTEN);
+            const raw = new_termios;
 
-        // timeout after 0 seconds so we don't block
-        new_termios.cc[flags.V.TIME] = 0;
-
-        // just return 0 if no input was detected
-        new_termios.cc[flags.V.MIN] = 0;
-
-        self.raw_termios = new_termios;
-    }
-
-    /// Enter "raw mode" in this terminal.
-    pub fn makeRaw(self: *Self) std.os.TermiosSetError!void {
-        // we have to be initalized to do this
-        std.debug.assert(self.initialized);
-
-        // don't bother making raw terminal raw again
-        if (!self.is_cooked) {
-            return;
+            return Termios{
+                .tty = tty,
+                .raw = raw,
+                .cooked = cooked,
+                .is_cooked = true,
+            };
         }
 
-        try std.os.tcsetattr(self.tty, std.os.linux.TCSA.FLUSH, self.raw_termios);
-
-        self.is_cooked = false;
-    }
-
-    // Enter "cooked mode" in this terminal.
-    pub fn makeCooked(self: *Self) std.os.TermiosSetError!void {
-        // we have to be initialized to do this
-        std.debug.assert(self.initialized);
-
-        // don't bother making cooked terminal cooked again
-        if (self.cooked) {
-            return;
+        /// Restore the old termios.
+        pub fn deinit(self: *Termios) std.os.TermiosSetError!void {
+            try self.makeCooked();
         }
 
-        try std.os.tcsetattr(self.tty, std.os.linux.TCSA.FLUSH, self.cooked_termios);
+        /// Enter raw mode.
+        pub fn makeRaw(self: *Termios) std.os.TermiosSetError!void {
+            // don't bother making raw terminal raw again
+            if (!self.is_cooked) {
+                return;
+            }
 
-        self.is_cooked = true;
-    }
+            try std.os.tcsetattr(self.tty, std.os.linux.TCSA.FLUSH, self.raw);
+
+            self.is_cooked = false;
+        }
+
+        // Enter cooked mode.
+        pub fn makeCooked(self: *Termios) std.os.TermiosSetError!void {
+            // don't bother making cooked terminal cooked again
+            if (self.is_cooked) {
+                return;
+            }
+
+            try std.os.tcsetattr(self.tty, std.os.linux.TCSA.FLUSH, self.cooked);
+
+            self.is_cooked = true;
+        }
+    };
+
+    pub const InitError = std.os.OpenError || Termios.Error || FetchTermDimensionsError;
 
     /// Initialize an undefined Terminal.
     pub fn initUndefined(terminal: *Self) InitError!void {
@@ -119,8 +118,8 @@ pub const Terminal = struct {
         // close it on err
         errdefer std.os.close(terminal.tty);
 
-        // prepare `cooked_termios` and `raw_termios`
-        try terminal.prepareTermios();
+        // initialize termios
+        terminal.termios = try Termios.init(tty);
 
         // update terminal dimensions
         try terminal.fetchTermDimensions();
@@ -155,7 +154,7 @@ pub const Terminal = struct {
         // to
         const TIOCGWINSZ: u16 = 0x5413;
         if (std.os.linux.ioctl(self.tty, TIOCGWINSZ, @ptrToInt(&winsize)) < 0) {
-            return error.FetchTermDimensionsError;
+            return FetchTermDimensionsError.IoctlError;
         }
         self.winsize = winsize;
     }
@@ -183,8 +182,7 @@ pub const Terminal = struct {
     /// Deinitialize this terminal.
     /// This restores the previous termios.
     pub fn deinit(self: *Self) void {
-        // restore old termios
-        std.os.tcsetattr(self.tty, std.os.linux.TCSA.NOW, self.cooked_termios) catch {
+        self.termios.deinit() catch {
             std.log.warn("unable to restore cooked termios", .{});
         };
 

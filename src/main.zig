@@ -10,7 +10,7 @@ pub fn main() !void {
     defer term.deinit();
 
     // enter raw mode
-    try term.makeRaw();
+    try term.termios.makeRaw();
 
     // clear screen
     try erase.eraseScreen(&term);
