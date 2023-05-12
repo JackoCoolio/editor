@@ -14,7 +14,7 @@ pub const Terminal = struct {
     pub const InitError = std.os.OpenError || std.os.TermiosGetError || std.os.TermiosSetError || FetchTermDimensionsError;
 
     /// Initialize an undefined Terminal.
-    pub fn init_undefined(terminal: *Self) InitError!void {
+    pub fn initUndefined(terminal: *Self) InitError!void {
         // ensure that we don't double initialize
         std.debug.assert(!terminal.initialized);
 
@@ -41,7 +41,7 @@ pub const Terminal = struct {
         terminal.new_termios = new_termios;
 
         // update terminal dimensions
-        try terminal.fetch_term_dimensions();
+        try terminal.fetchTermDimensions();
 
         // mark as initialized, so we don't accidentally init again
         terminal.initialized = true;
@@ -50,14 +50,14 @@ pub const Terminal = struct {
     /// Create a new terminal.
     pub fn init() !Self {
         var term: Self = undefined;
-        try term.init_undefined();
+        try term.initUndefined();
         return term;
     }
 
     /// Create a new terminal with the given Allocator.
     pub fn initAlloc(alloc: std.mem.Allocator) !*Self {
         var term: *Self = alloc.create(Self);
-        try term.init_undefined();
+        try term.initUndefined();
         return term;
     }
 
@@ -66,7 +66,7 @@ pub const Terminal = struct {
         IoctlError,
     };
     /// Updates the terminal dimensions.
-    fn fetch_term_dimensions(self: *Self) FetchTermDimensionsError!void {
+    fn fetchTermDimensions(self: *Self) FetchTermDimensionsError!void {
         var winsize: std.os.linux.winsize = undefined;
         // this is not ideal, but I can't find this constant anywhere in the Zig
         // standard library and I'd rather not link against libc if I don't have
@@ -79,16 +79,16 @@ pub const Terminal = struct {
     }
 
     /// Returns the number of columns in this Terminal.
-    pub fn get_width(self: *const Self) u16 {
+    pub fn getWidth(self: *const Self) u16 {
         return self.winsize.ws_col;
     }
 
     /// Returns the number of rows in this Terminal.
-    pub fn get_height(self: *const Self) u16 {
+    pub fn getHeight(self: *const Self) u16 {
         return self.winsize.ws_row;
     }
 
-    pub fn get_input(self: *const Self, buf: []u8) std.os.ReadError!usize {
+    pub fn getInput(self: *const Self, buf: []u8) std.os.ReadError!usize {
         std.log.info("tty is: {}", .{self.tty});
         return std.os.read(self.tty, buf);
     }
