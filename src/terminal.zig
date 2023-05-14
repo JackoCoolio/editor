@@ -169,8 +169,11 @@ pub const Terminal = struct {
         return self.winsize.ws_row;
     }
 
-    pub fn getInput(self: *const Self, buf: []u8) std.os.ReadError!usize {
-        return std.os.read(self.tty, buf);
+    /// Reads input from the terminal into the given buffer.
+    /// Returns a slice to the written data.
+    pub fn getInput(self: *const Self, buf: []u8) std.os.ReadError![]u8 {
+        const len = try std.os.read(self.tty, buf);
+        return buf[0..len];
     }
 
     /// Writes a sequence of bytes to TTY.

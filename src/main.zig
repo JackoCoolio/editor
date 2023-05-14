@@ -18,16 +18,26 @@ pub fn main() !void {
     // test
     try cursor.moveCursor(&term, 0, 0);
 
-    var buf: [8]u8 = undefined;
+    var input_buf: [8]u8 = undefined;
     while (true) {
-        const read_len: usize = try term.getInput(&buf);
-        if (read_len == 0) {
+        const input = try term.getInput(&input_buf);
+
+        if (input.len == 0) {
             continue;
         }
 
-        if (read_len == 1 and buf[0] == ascii.ESC) {
+        if (input.len == 1 and input[0] == ascii.ESC) {
             // quit on ESC
             break;
+        }
+
+        try erase.eraseScreen(&term);
+        try cursor.moveCursorHome(&term);
+
+        for (input) |c| {
+            var fmt_buf: [8]u8 = undefined;
+            _ = try std.fmt.bufPrint(&fmt_buf, "0x{x}, ", .{c});
+            _ = try term.write(&fmt_buf);
         }
     }
 }
