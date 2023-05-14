@@ -35,7 +35,7 @@ fn getTerminfoDirs(allocator: std.mem.Allocator) []const u8 {
         }
     }
 
-    if (len != 0) {
+    if (len != 2) {
         len -= 1;
     }
 
