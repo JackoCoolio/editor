@@ -1,4 +1,5 @@
 const std = @import("std");
+const unibi = @import("unibi.zig");
 
 pub const Terminal = struct {
     const Self = @This();
@@ -8,6 +9,8 @@ pub const Terminal = struct {
 
     tty: std.os.fd_t,
     winsize: std.os.linux.winsize,
+
+    terminfo: *unibi.Term,
 
     pub const Termios = struct {
         tty: std.os.fd_t,
@@ -102,12 +105,21 @@ pub const Terminal = struct {
         }
     };
 
-    pub const InitError = std.os.OpenError || Termios.Error || FetchTermDimensionsError;
+    pub const InitError = error{
+        InvalidTerm,
+    } || std.os.OpenError || Termios.Error || FetchTermDimensionsError;
 
     /// Initialize an undefined Terminal.
     pub fn initUndefined(terminal: *Self) InitError!void {
         // ensure that we don't double initialize
         std.debug.assert(!terminal.initialized);
+
+        terminal.terminfo = unibi.c.unibi_from_env() orelse {
+            return error.InvalidTerm;
+        };
+
+        const name = unibi.c.unibi_get_name(terminal.terminfo);
+        std.log.info("term name: {s}", .{name});
 
         terminal.initialized = false;
 
