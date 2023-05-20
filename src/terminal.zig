@@ -124,6 +124,7 @@ pub const Terminal = struct {
 
         const unsized_terminfo = try ti.TermInfo.initFromEnv(allocator);
         terminal.my_terminfo = unsized_terminfo.intoExtended();
+        errdefer terminal.my_terminfo.deinit();
 
         const name = unibi.c.unibi_get_name(terminal.terminfo);
         std.log.info("term name: {s}", .{name});
@@ -195,6 +196,8 @@ pub const Terminal = struct {
         self.termios.deinit() catch {
             std.log.warn("unable to restore cooked termios", .{});
         };
+
+        self.my_terminfo.deinit();
 
         std.os.close(self.tty);
 
