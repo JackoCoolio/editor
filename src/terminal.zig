@@ -1,5 +1,6 @@
 const std = @import("std");
 const unibi = @import("unibi.zig");
+const ti = @import("terminfo");
 
 pub const Terminal = struct {
     const Self = @This();
@@ -11,6 +12,7 @@ pub const Terminal = struct {
     winsize: std.os.linux.winsize,
 
     terminfo: *unibi.Term,
+    my_terminfo: ti.ExtendedTermInfo,
 
     pub const Termios = struct {
         tty: std.os.fd_t,
@@ -107,16 +109,21 @@ pub const Terminal = struct {
 
     pub const InitError = error{
         InvalidTerm,
-    } || std.os.OpenError || Termios.Error || FetchTermDimensionsError;
+    } || std.os.OpenError || Termios.Error || FetchTermDimensionsError || ti.TermInfo.InitFromEnvError;
 
-    /// Initialize an undefined Terminal.
-    pub fn initUndefined(terminal: *Self) InitError!void {
+    /// Create a new terminal.
+    pub fn init(allocator: std.mem.Allocator) InitError!Self {
+        var terminal: Self = undefined;
+
         // ensure that we don't double initialize
         std.debug.assert(!terminal.initialized);
 
         terminal.terminfo = unibi.c.unibi_from_env() orelse {
             return error.InvalidTerm;
         };
+
+        const unsized_terminfo = try ti.TermInfo.initFromEnv(allocator);
+        terminal.my_terminfo = unsized_terminfo.intoExtended();
 
         const name = unibi.c.unibi_get_name(terminal.terminfo);
         std.log.info("term name: {s}", .{name});
@@ -138,20 +145,8 @@ pub const Terminal = struct {
 
         // mark as initialized, so we don't accidentally init again
         terminal.initialized = true;
-    }
 
-    /// Create a new terminal.
-    pub fn init() InitError!Self {
-        var term: Self = undefined;
-        try term.initUndefined();
-        return term;
-    }
-
-    /// Create a new terminal with the given Allocator.
-    pub fn initAlloc(alloc: std.mem.Allocator) InitError!*Self {
-        var term: *Self = alloc.create(Self);
-        try term.initUndefined();
-        return term;
+        return terminal;
     }
 
     pub const FetchTermDimensionsError = error{

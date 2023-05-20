@@ -6,7 +6,11 @@ const cursor = @import("ansi/cursor.zig");
 const ascii = @import("ansi/ascii.zig");
 
 pub fn main() !void {
-    var term = try terminal.Terminal.init();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var term = try terminal.Terminal.init(allocator);
     defer term.deinit();
 
     // enter raw mode
