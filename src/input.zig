@@ -45,18 +45,18 @@ pub const Modifiers = struct {
 pub const MouseEvent = struct {};
 
 pub fn build_capabilities_trie(allocator: std.mem.Allocator, term_info: TermInfo) std.mem.Allocator.Error!Trie(Capability) {
+    const log = std.log.scoped(.build_capabilities_trie);
+
     var trie = Trie(Capability).init(allocator);
     errdefer trie.deinit();
 
     var iter = term_info.strings.iter();
     while (iter.next()) |item| {
-        std.log.info("insert: '{s}' -> '{s}'", .{ std.fmt.fmtSliceHexLower(item.value), @tagName(item.capability) });
+        log.info("insert: '{s}' -> '{s}'", .{ std.fmt.fmtSliceEscapeLower(item.value), @tagName(item.capability) });
         try trie.insert_sequence(item.value, item.capability);
     }
     return trie;
 }
-
-test "cap trie" {}
 
 pub const InputEventQueue = struct {
     allocator: std.mem.Allocator,
@@ -175,5 +175,5 @@ pub fn input_thread_entry(tty: std.os.fd_t, trie: Trie(Capability), event_queue:
         }
     }
 
-    std.process.exit(42);
+    unreachable;
 }
