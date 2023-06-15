@@ -1,3 +1,3 @@
 [submodule "vendor/terminfo"]
-	path = vendor/terminfo
+	path = lib/terminfo
 	url = https://github.com/jackocoolio/terminfo

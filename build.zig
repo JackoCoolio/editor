@@ -80,7 +80,7 @@ pub fn build(b: *std.Build) !void {
 
     const terminfo_module = b.createModule(std.build.CreateModuleOptions{
         .source_file = std.build.FileSource{
-            .path = "vendor/terminfo/src/main.zig",
+            .path = "lib/terminfo/src/main.zig",
         },
     });
 
