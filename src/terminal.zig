@@ -1,18 +1,16 @@
 const std = @import("std");
 const unibi = @import("unibi.zig");
-const ti = @import("terminfo");
+const TermInfo = @import("terminfo").TermInfo;
 
 pub const Terminal = struct {
     const Self = @This();
 
-    initialized: bool,
     termios: Termios,
 
     tty: std.os.fd_t,
     winsize: std.os.linux.winsize,
 
-    terminfo: *unibi.Term,
-    my_terminfo: ti.ExtendedTermInfo,
+    terminfo: TermInfo,
 
     pub const Termios = struct {
         tty: std.os.fd_t,
@@ -109,27 +107,14 @@ pub const Terminal = struct {
 
     pub const InitError = error{
         InvalidTerm,
-    } || std.os.OpenError || Termios.Error || FetchTermDimensionsError || ti.TermInfo.InitFromEnvError;
+    } || std.os.OpenError || Termios.Error || FetchTermDimensionsError || TermInfo.InitFromEnvError;
 
     /// Create a new terminal.
     pub fn init(allocator: std.mem.Allocator) InitError!Self {
         var terminal: Self = undefined;
 
-        // ensure that we don't double initialize
-        std.debug.assert(!terminal.initialized);
-
-        terminal.terminfo = unibi.c.unibi_from_env() orelse {
-            return error.InvalidTerm;
-        };
-
-        const unsized_terminfo = try ti.TermInfo.initFromEnv(allocator);
-        terminal.my_terminfo = unsized_terminfo.intoExtended();
-        errdefer terminal.my_terminfo.deinit();
-
-        const name = unibi.c.unibi_get_name(terminal.terminfo);
-        std.log.info("term name: {s}", .{name});
-
-        terminal.initialized = false;
+        terminal.terminfo = try TermInfo.initFromEnv(allocator);
+        errdefer terminal.terminfo.deinit();
 
         // open the TTY file
         const tty = try std.os.open("/dev/tty", std.os.linux.O.RDWR, 0);
@@ -143,9 +128,6 @@ pub const Terminal = struct {
 
         // update terminal dimensions
         try terminal.fetchTermDimensions();
-
-        // mark as initialized, so we don't accidentally init again
-        terminal.initialized = true;
 
         return terminal;
     }
@@ -197,10 +179,8 @@ pub const Terminal = struct {
             std.log.warn("unable to restore cooked termios", .{});
         };
 
-        self.my_terminfo.deinit();
+        self.terminfo.deinit();
 
         std.os.close(self.tty);
-
-        self.initialized = false;
     }
 };
