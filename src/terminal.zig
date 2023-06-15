@@ -1,5 +1,4 @@
 const std = @import("std");
-const unibi = @import("unibi.zig");
 const TermInfo = @import("terminfo").TermInfo;
 const input = @import("input.zig");
 const Trie = @import("trie.zig").Trie;
