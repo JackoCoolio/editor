@@ -95,12 +95,6 @@ pub fn build(b: *std.Build) !void {
     {
         exe.linkLibC();
         exe.addModule("terminfo", terminfo_module);
-
-        const terminfo_dirs = getTerminfoDirs(b.allocator);
-        exe.defineCMacro("TERMINFO_DIRS", terminfo_dirs);
-        exe.addCSourceFile("vendor/unibilium/unibilium.c", &[_][]const u8{});
-        exe.addCSourceFile("vendor/unibilium/uninames.c", &[_][]const u8{});
-        exe.addCSourceFile("vendor/unibilium/uniutil.c", &[_][]const u8{});
     }
 
     // This declares intent for the executable to be installed into the
