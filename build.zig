@@ -78,7 +78,7 @@ pub fn build(b: *std.Build) !void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    const module = b.createModule(std.build.CreateModuleOptions{
+    const terminfo_module = b.createModule(std.build.CreateModuleOptions{
         .source_file = std.build.FileSource{
             .path = "vendor/terminfo/src/main.zig",
         },
@@ -94,7 +94,7 @@ pub fn build(b: *std.Build) !void {
     });
     {
         exe.linkLibC();
-        exe.addModule("terminfo", module);
+        exe.addModule("terminfo", terminfo_module);
 
         const terminfo_dirs = getTerminfoDirs(b.allocator);
         exe.defineCMacro("TERMINFO_DIRS", terminfo_dirs);
@@ -138,6 +138,10 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    {
+        unit_tests.linkLibC();
+        unit_tests.addModule("terminfo", terminfo_module);
+    }
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
