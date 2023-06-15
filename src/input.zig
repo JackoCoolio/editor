@@ -104,24 +104,44 @@ pub const InputEventQueue = struct {
     }
 };
 
+fn read_input(tty: std.os.fd_t, buf: []u8) std.os.ReadError![]u8 {
+    var stream = std.io.fixedBufferStream(buf);
+
+    while (true) {
+        var segment_buf: [16]u8 = undefined;
+        const segment_len = try std.os.read(tty, &segment_buf);
+
+        // append the input segment to the input buffer
+        _ = stream.write(segment_buf[0..segment_len]) catch std.debug.panic("input was longer than 1KB", .{});
+
+        // if the input was at least as large as the segment, it might have
+        // been incomplete, so read again
+        if (segment_len == @sizeOf(@TypeOf(segment_buf))) {
+            continue;
+        }
+
+        // getEndPos never fails. not sure why it returns !usize
+        if ((stream.getEndPos() catch unreachable) == 0) {
+            continue;
+        }
+
+        return stream.getWritten();
+    }
+}
+
 pub fn input_thread_entry(tty: std.os.fd_t, trie: Trie(Capability), event_queue: InputEventQueue) !void {
     // it's stupid that I have to do this, andrewrk pls fix
     // immutable parameters are fine, just allow shadowing
     var event_queue_var = event_queue;
 
-    // 16 bytes is a safe buffer for keyboard input
-    // FIXME: it is not!
-    var input_buf: [16]u8 = undefined;
+    // if an input is larger than 1KB, something is very wrong!
+    var input_buf: [1024]u8 = undefined;
+
     while (true) {
-        const inp_len = try std.os.read(tty, &input_buf);
-        var inp = input_buf[0..inp_len];
+        var input = try read_input(tty, &input_buf);
 
-        if (inp.len == 0) {
-            continue;
-        }
-
-        while (inp.len > 0) {
-            const longest_n = trie.lookup_longest(inp);
+        while (input.len > 0) {
+            const longest_n = trie.lookup_longest(input);
             if (longest_n) |longest| {
                 const cap = longest.value;
 
@@ -138,19 +158,19 @@ pub fn input_thread_entry(tty: std.os.fd_t, trie: Trie(Capability), event_queue:
                     },
                 });
 
-                inp = inp[longest.eaten..];
+                input = input[longest.eaten..];
             } else {
                 try event_queue_var.put(InputEvent{
                     .Key = KeyEvent{
                         .key = Key{
                             .Regular = .{
                                 .bytes = input_buf[0..8].*,
-                                .size = @truncate(u4, inp_len),
+                                .size = 1,
                             },
                         },
                     },
                 });
-                inp = inp[1..];
+                input = input[1..];
             }
         }
     }
