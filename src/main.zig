@@ -75,7 +75,17 @@ pub fn main() !void {
                                 break;
                             }
 
-                            _ = try term.write(fmt_buf_s);
+                            if (std.mem.eql(u8, fmt_buf_s, "j")) {
+                                try term.exec(.cursor_down);
+                            } else if (std.mem.eql(u8, fmt_buf_s, "k")) {
+                                try term.exec(.cursor_up);
+                            } else if (std.mem.eql(u8, fmt_buf_s, "l")) {
+                                try term.exec(.cursor_right);
+                            } else if (std.mem.eql(u8, fmt_buf_s, "h")) {
+                                try term.exec(.cursor_left);
+                            } else {
+                                _ = try term.write(fmt_buf_s);
+                            }
                         },
                         .Capability => |cap| {
                             if (cap == .key_backspace) {
@@ -94,10 +104,8 @@ pub fn main() !void {
         }
     }
 
-    // clear screen
-    try erase.eraseScreen(&term);
-
-    _ = try term.write(term.terminfo.strings.getValue(.cursor_home).?);
+    try term.exec(.clear_screen);
+    try term.exec(.cursor_home);
 
     // reset termios to cooked mode
     try term.termios.makeCooked();

@@ -1,6 +1,9 @@
 const std = @import("std");
 const unibi = @import("unibi.zig");
 const TermInfo = @import("terminfo").TermInfo;
+const input = @import("input.zig");
+const Trie = @import("trie.zig").Trie;
+const Capability = @import("terminfo").Strings.Capability;
 
 pub const Terminal = struct {
     const Self = @This();
@@ -182,5 +185,18 @@ pub const Terminal = struct {
         self.terminfo.deinit();
 
         std.os.close(self.tty);
+    }
+
+    pub const ExecError = error{FnUnavailableError} || std.os.WriteError;
+
+    /// Executes the given capability. Returns an error if the capability is
+    /// unavailable or the TTY could not be written to.
+    pub fn exec(self: *const Self, cap: Capability) ExecError!void {
+        const cap_val = self.terminfo.strings.getValue(cap);
+        if (cap_val) |cap_val_u| {
+            _ = try self.write(cap_val_u);
+        } else {
+            return error.FnUnavailableError;
+        }
     }
 };
