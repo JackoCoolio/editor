@@ -4,6 +4,10 @@ const terminal = @import("terminal.zig");
 const input = @import("input.zig");
 const Trie = @import("trie.zig").Trie;
 
+pub const std_options = struct {
+    pub const logFn = @import("log.zig").log_fn;
+};
+
 fn FixedStringBuffer(comptime N: usize) type {
     return struct {
         const Self = @This();
@@ -30,6 +34,8 @@ fn FixedStringBuffer(comptime N: usize) type {
 }
 
 pub fn main() !void {
+    defer @import("log.zig").close_log_file();
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
