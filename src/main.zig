@@ -1,9 +1,6 @@
 const std = @import("std");
 
 const terminal = @import("terminal.zig");
-const erase = @import("ansi/erase.zig");
-const cursor = @import("ansi/cursor.zig");
-const ascii = @import("ansi/ascii.zig");
 const input = @import("input.zig");
 const Trie = @import("trie.zig").Trie;
 
@@ -88,10 +85,6 @@ pub fn main() !void {
                             }
                         },
                         .Capability => |cap| {
-                            if (cap == .key_backspace) {
-                                break;
-                            }
-
                             var fmt_buf: [64]u8 = undefined;
                             const fmt_buf_s = try std.fmt.bufPrint(&fmt_buf, "{s}", .{@tagName(cap)});
                             _ = try term.write(fmt_buf_s);
