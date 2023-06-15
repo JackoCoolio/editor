@@ -1,6 +1,3 @@
-[submodule "vendor/unibilium"]
-	path = vendor/unibilium
-	url = https://github.com/neovim/unibilium
 [submodule "vendor/terminfo"]
 	path = vendor/terminfo
 	url = https://github.com/jackocoolio/terminfo
