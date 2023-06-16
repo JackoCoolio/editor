@@ -2,7 +2,6 @@ const std = @import("std");
 
 const terminal = @import("terminal.zig");
 const input = @import("input.zig");
-const Trie = @import("trie.zig").Trie;
 const log = @import("log.zig");
 
 pub const std_options = struct {
@@ -129,6 +128,8 @@ pub fn main() !void {
         try exit_message.append("\n", .{});
         std.log.info("{s}", .{exit_message.get_buf()});
     }
+
+    cleanup_log.info("done", .{});
 
     if (log.highest_log_severity >= comptime log.level_to_severity(.err)) {
         try exit_message.append("errors were logged while editor was running. check log file for more info.\n", .{});
