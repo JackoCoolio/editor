@@ -81,8 +81,8 @@ pub fn main() !void {
                     switch (key_event.key) {
                         .Regular => |reg| {
                             // bytes is 8 bytes max
-                            var fmt_buf: [@sizeOf(@TypeOf(reg.bytes)) * 4]u8 = undefined;
-                            const fmt_buf_s = try std.fmt.bufPrint(&fmt_buf, "{s}", .{std.fmt.fmtSliceEscapeLower(reg.bytes[0..reg.size])});
+                            var fmt_buf: [4]u8 = undefined;
+                            const fmt_buf_s = try std.fmt.bufPrint(&fmt_buf, "{s}", .{std.fmt.fmtSliceEscapeLower(&[_]u8{reg})});
 
                             if (std.mem.eql(u8, fmt_buf_s, "q")) {
                                 input_log.info("encountered 'q'. exiting editor", .{});

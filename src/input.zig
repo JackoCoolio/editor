@@ -1,5 +1,5 @@
 const std = @import("std");
-const Trie = @import("trie.zig").Trie;
+const ByteTrie = @import("trie.zig").ByteTrie;
 const terminfo = @import("terminfo");
 const Capability = terminfo.Strings.Capability;
 const TermInfo = terminfo.TermInfo;
@@ -16,11 +16,7 @@ pub const InputEvent = union(InputEventType) {
 
 pub const KeyEvent = struct {
     key: Key,
-    modifiers: Modifiers = .{
-        .shift = false,
-        .control = false,
-        .alt = false,
-    },
+    modifiers: Modifiers = .{},
 };
 
 pub const KeyType = enum {
@@ -29,25 +25,24 @@ pub const KeyType = enum {
 };
 
 pub const Key = union(KeyType) {
-    Regular: struct {
-        bytes: [8]u8,
-        size: std.math.IntFittingRange(0, 8),
-    },
+    Regular: u8,
     Capability: Capability,
 };
 
 pub const Modifiers = struct {
-    shift: bool,
-    control: bool,
-    alt: bool,
+    shift: bool = false,
+    control: bool = false,
+    alt: bool = false,
 };
 
 pub const MouseEvent = struct {};
 
-pub fn build_capabilities_trie(allocator: std.mem.Allocator, term_info: TermInfo) std.mem.Allocator.Error!Trie(Capability) {
+pub const CapabilitiesTrie = ByteTrie(Capability);
+
+pub fn build_capabilities_trie(allocator: std.mem.Allocator, term_info: TermInfo) std.mem.Allocator.Error!CapabilitiesTrie {
     const log = std.log.scoped(.build_capabilities_trie);
 
-    var trie = Trie(Capability).init(allocator);
+    var trie = CapabilitiesTrie.init(allocator);
     errdefer trie.deinit();
 
     var iter = term_info.strings.iter();
@@ -129,7 +124,30 @@ fn read_input(tty: std.os.fd_t, buf: []u8) std.os.ReadError![]u8 {
     }
 }
 
-pub fn input_thread_entry(tty: std.os.fd_t, trie: Trie(Capability), event_queue: InputEventQueue) !void {
+/// Returns the unshifted version of the character, or null if it isn't shifted.
+/// Example: `unshift('A') == 'a'`, `unshift('1') == null`.
+pub fn unshift(key: u8) ?u8 {
+    const lower = std.ascii.toLower(key);
+    if (key == lower) {
+        return null;
+    } else {
+        return lower;
+    }
+}
+
+/// Returns the shifted version of the character, or null if it can't be shifted.
+/// This only acts on alphabetic characters, not numbers, i.e. `shift('1') != '!'`.
+/// Example: `shift('a') == 'A'`, `shift('1') == null`.
+pub fn shift(key: u8) ?u8 {
+    const upper = std.ascii.toUpper(key);
+    if (key == upper) {
+        return null;
+    } else {
+        return upper;
+    }
+}
+
+pub fn input_thread_entry(tty: std.os.fd_t, trie: CapabilitiesTrie, event_queue: InputEventQueue) !void {
     // it's stupid that I have to do this, andrewrk pls fix
     // immutable parameters are fine, just allow shadowing
     var event_queue_var = event_queue;
@@ -140,6 +158,7 @@ pub fn input_thread_entry(tty: std.os.fd_t, trie: Trie(Capability), event_queue:
     while (true) {
         var input = try read_input(tty, &input_buf);
 
+        // we shift the input slice thru the buffer until we reach the end
         while (input.len > 0) {
             const longest_n = trie.lookup_longest(input);
             if (longest_n) |longest| {
@@ -160,14 +179,23 @@ pub fn input_thread_entry(tty: std.os.fd_t, trie: Trie(Capability), event_queue:
 
                 input = input[longest.eaten..];
             } else {
+                var char = input_buf[0];
+                const unshifted_m = unshift(char);
+                var modifiers = Modifiers{
+                    .shift = false,
+                    .control = false,
+                    .alt = false,
+                };
+                if (unshifted_m) |unshifted| {
+                    char = unshifted;
+                    modifiers.shift = true;
+                }
                 try event_queue_var.put(InputEvent{
                     .Key = KeyEvent{
                         .key = Key{
-                            .Regular = .{
-                                .bytes = input_buf[0..8].*,
-                                .size = 1,
-                            },
+                            .Regular = char,
                         },
+                        .modifiers = modifiers,
                     },
                 });
                 input = input[1..];
