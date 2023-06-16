@@ -1,36 +1,54 @@
 const std = @import("std");
 
-pub fn Trie(comptime V: type) type {
+pub fn Config(
+    comptime K: type,
+) type {
     return struct {
+        to_bytes: fn (K) [@sizeOf(K)]u8,
+    };
+}
+
+pub fn Trie(comptime K: type, comptime V: type, comptime config: Config(K)) type {
+    return struct {
+        const Self = @This();
+
         root: Node,
         allocator: std.mem.Allocator,
 
-        pub fn init(allocator: std.mem.Allocator) Trie(V) {
+        pub fn init(allocator: std.mem.Allocator) Self {
             return .{
                 .root = Node.init(allocator, null),
                 .allocator = allocator,
             };
         }
 
-        pub fn deinit(self: *const Trie(V)) void {
+        pub fn deinit(self: *const Self) void {
             self.root.deinit();
         }
 
-        pub fn insert_sequence(self: *Trie(V), seq: []const u8, value: V) std.mem.Allocator.Error!void {
+        pub fn insert_sequence(self: *Self, seq: []const K, value: V) std.mem.Allocator.Error!void {
             var curr = &self.root;
             var i: usize = 0;
             while (i < seq.len) : (i += 1) {
-                curr = try curr.get_next_or_insert(seq[i], null);
+                const char = seq[i];
+                const bytes = config.to_bytes(char);
+                for (bytes) |byte| {
+                    curr = try curr.get_next_or_insert(byte, null);
+                }
             }
             curr.value = value;
         }
 
         /// Looks up the given sequence in the trie, returning null if it doesn't exist.
-        pub fn lookup_exact(self: *const Trie(V), seq: []const u8) ?V {
+        pub fn lookup_exact(self: *const Self, seq: []const K) ?V {
             var curr = &self.root;
             var i: usize = 0;
             while (i < seq.len) : (i += 1) {
-                curr = curr.get_next(seq[i]) orelse return null;
+                const char = seq[i];
+                const bytes = config.to_bytes(char);
+                for (bytes) |byte| {
+                    curr = curr.get_next(byte) orelse return null;
+                }
             }
             return curr.value;
         }
@@ -43,24 +61,28 @@ pub fn Trie(comptime V: type) type {
         };
 
         /// Looks up the given sequence in the trie, returning the longest match.
-        pub fn lookup_longest(self: *const Trie(V), seq: []const u8) ?Longest {
+        pub fn lookup_longest(self: *const Self, seq: []const K) ?Longest {
             var curr = &self.root;
             var i: usize = 0;
             var last_value: ?Longest = null;
 
-            while (i < seq.len) : (i += 1) {
+            chars: while (i < seq.len) : (i += 1) {
                 if (curr.value) |value| {
                     std.debug.assert(i != 0);
                     last_value = .{ .value = value, .eaten = i };
                 }
 
-                const next_curr_n = curr.get_next(seq[i]);
-                if (next_curr_n) |next_curr| {
-                    curr = next_curr;
-                    continue;
-                }
+                const char = seq[i];
+                const bytes = config.to_bytes(char);
+                for (bytes) |byte| {
+                    const next_curr_n = curr.get_next(byte);
+                    if (next_curr_n) |next_curr| {
+                        curr = next_curr;
+                        continue;
+                    }
 
-                break;
+                    break :chars;
+                }
             }
 
             if (curr.value) |value| {
@@ -93,32 +115,50 @@ pub fn Trie(comptime V: type) type {
                 }
             }
 
-            pub fn get_next(self: *const Node, char: u8) ?*const Node {
-                return self.branches[char];
+            pub fn get_next(self: *const Node, byte: u8) ?*const Node {
+                return self.branches[byte];
             }
 
-            pub fn get_next_mut(self: *Node, char: u8) ?*Node {
-                return self.branches[char];
+            pub fn get_next_mut(self: *Node, byte: u8) ?*Node {
+                return self.branches[byte];
             }
 
-            pub fn get_next_or_insert(self: *Node, char: u8, value: ?V) std.mem.Allocator.Error!*Node {
-                if (self.get_next_mut(char)) |next_node| {
+            pub fn get_next_or_insert(self: *Node, byte: u8, value: ?V) std.mem.Allocator.Error!*Node {
+                if (self.get_next_mut(byte)) |next_node| {
                     return next_node;
                 } else {
-                    const next_node_dst = try self.allocator.create(Node);
-                    const next_node = Node.init(self.allocator, value);
-                    next_node_dst.* = next_node;
-
-                    self.branches[char] = next_node_dst;
-                    return next_node_dst;
+                    const index = byte;
+                    const next_node_ptr = ptr: {
+                        if (self.branches[index]) |branch| {
+                            branch.value = value orelse branch.value;
+                            break :ptr branch;
+                        } else {
+                            const next_node_ptr = try self.allocator.create(Node);
+                            const next_node = Node.init(self.allocator, value);
+                            next_node_ptr.* = next_node;
+                            self.branches[index] = next_node_ptr;
+                            break :ptr next_node_ptr;
+                        }
+                    };
+                    return next_node_ptr;
                 }
             }
         };
     };
 }
 
+fn u8_to_arr(val: u8) [1]u8 {
+    return [1]u8{val};
+}
+
+pub fn ByteTrie(comptime V: type) type {
+    return Trie(u8, V, .{ .to_bytes = u8_to_arr });
+}
+
 test "lookup_exact" {
-    var trie = Trie(u8).init(std.testing.allocator);
+    var trie = ByteTrie(
+        u8,
+    ).init(std.testing.allocator);
     defer trie.deinit();
 
     try trie.insert_sequence("foo", 42);
@@ -127,7 +167,7 @@ test "lookup_exact" {
 }
 
 test "lookup_longest" {
-    var trie = Trie(u8).init(std.testing.allocator);
+    var trie = ByteTrie(u8).init(std.testing.allocator);
     defer trie.deinit();
 
     try trie.insert_sequence("foo", 42);
