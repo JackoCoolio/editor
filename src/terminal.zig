@@ -174,6 +174,18 @@ pub const Terminal = struct {
         return std.os.write(self.tty, seq);
     }
 
+    pub fn write_fmt(self: *const Self, comptime fmt: []const u8, args: anytype) std.os.WriteError!void {
+        const S = struct {
+            pub fn write_fn(context: *const Self, bytes: []const u8) std.os.WriteError!usize {
+                return context.write(bytes);
+            }
+        };
+        const writer = std.io.Writer(*const Self, std.os.WriteError, S.write_fn){
+            .context = self,
+        };
+        return try std.fmt.format(writer, fmt, args);
+    }
+
     /// Deinitialize this terminal.
     /// This restores the previous termios.
     pub fn deinit(self: *Self) void {

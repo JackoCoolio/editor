@@ -3,6 +3,7 @@ const std = @import("std");
 const terminal = @import("terminal.zig");
 const input = @import("input.zig");
 const log = @import("log.zig");
+const utf8 = @import("utf8.zig");
 
 pub const std_options = struct {
     pub const logFn = log.log_fn;
@@ -59,7 +60,7 @@ pub fn main() !void {
     std.debug.assert(trie.lookup_longest(term.terminfo.strings.getValue(.cursor_left).?) != null);
 
     init_log.info("spawning input thread", .{});
-    const handle = try std.Thread.spawn(.{}, input.input_thread_entry, .{ term.tty, trie, event_queue });
+    const handle = try std.Thread.spawn(.{}, input.input_thread_entry, .{ allocator, term.tty, trie, event_queue });
     handle.detach();
 
     var exit_message = FixedStringBuffer(1024).init();
@@ -77,39 +78,50 @@ pub fn main() !void {
     while (true) {
         if (event_queue.get()) |event| {
             switch (event) {
-                .Key => |key_event| {
-                    switch (key_event.key) {
-                        .Regular => |reg| {
-                            // bytes is 8 bytes max
-                            var fmt_buf: [4]u8 = undefined;
-                            const fmt_buf_s = try std.fmt.bufPrint(&fmt_buf, "{s}", .{std.fmt.fmtSliceEscapeLower(&[_]u8{reg})});
+                .key => |key| {
+                    switch (key.code) {
+                        .unicode => |cp| {
+                            // gets a slice to the non-null bytes
+                            const bytes = try utf8.cp_to_char(allocator, cp);
+                            defer allocator.free(bytes);
 
-                            if (std.mem.eql(u8, fmt_buf_s, "q")) {
+                            // bytes is 4 bytes max, and an escaped byte YY turns into "\xYY" (4 bytes).
+                            var fmt_buf: [4 * 4]u8 = undefined;
+                            const fmt_buf_s = try std.fmt.bufPrint(&fmt_buf, "{s}", .{std.fmt.fmtSliceEscapeLower(bytes)});
+                            _ = fmt_buf_s;
+
+                            if (std.mem.eql(u8, bytes, "q")) {
                                 input_log.info("encountered 'q'. exiting editor", .{});
                                 break;
                             }
 
-                            if (std.mem.eql(u8, fmt_buf_s, "j")) {
+                            if (std.mem.eql(u8, bytes, "j")) {
                                 try term.exec(.cursor_down);
-                            } else if (std.mem.eql(u8, fmt_buf_s, "k")) {
+                            } else if (std.mem.eql(u8, bytes, "k")) {
                                 try term.exec(.cursor_up);
-                            } else if (std.mem.eql(u8, fmt_buf_s, "l")) {
+                            } else if (std.mem.eql(u8, bytes, "l")) {
                                 try term.exec(.cursor_right);
-                            } else if (std.mem.eql(u8, fmt_buf_s, "h")) {
+                            } else if (std.mem.eql(u8, bytes, "h")) {
                                 try term.exec(.cursor_left);
                             } else {
-                                _ = try term.write(fmt_buf_s);
+                                _ = try term.write(bytes);
                             }
                         },
-                        .Capability => |cap| {
-                            var fmt_buf: [64]u8 = undefined;
-                            const fmt_buf_s = try std.fmt.bufPrint(&fmt_buf, "{s}", .{@tagName(cap)});
-                            _ = try term.write(fmt_buf_s);
+                        .symbol => |sym| {
+                            std.log.debug("symbol: {}", .{key});
+                            if (try key.get_utf8(allocator)) |bytes| {
+                                defer allocator.free(bytes);
+                                _ = try term.write(bytes);
+                            } else {
+                                var fmt_buf: [64]u8 = undefined;
+                                const fmt_buf_s = try std.fmt.bufPrint(&fmt_buf, "{s}", .{@tagName(sym)});
+                                _ = try term.write(fmt_buf_s);
+                            }
                         },
                     }
                 },
                 // unimplemented for now
-                .Mouse => unreachable,
+                .mouse => unreachable,
             }
         }
     }
