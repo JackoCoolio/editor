@@ -49,7 +49,7 @@ pub fn log_fn(comptime message_level: std.log.Level, comptime scope: @TypeOf(.En
     _ = std.fmt.bufPrint(&msg_buf, format, args) catch unreachable;
 
     var log_buf: [2048]u8 = undefined;
-    const log_buf_s = std.fmt.bufPrint(&log_buf, "{s}\t({s}): {s}\n", .{ message_level.asText(), scope_str, msg_buf }) catch unreachable;
+    const log_buf_s = std.fmt.bufPrint(&log_buf, "{s}:\t({s}): {s}\n", .{ message_level.asText(), scope_str, msg_buf }) catch unreachable;
 
     const writer = log_file.writer();
     _ = writer.write(log_buf_s) catch unreachable;
