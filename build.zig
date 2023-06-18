@@ -63,6 +63,8 @@ fn getTerminfoDirs(allocator: std.mem.Allocator) []const u8 {
     return out_buf;
 }
 
+const unicode_generated_file = "data/unicode.generated.zig";
+
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
@@ -84,6 +86,13 @@ pub fn build(b: *std.Build) !void {
         },
     });
 
+    const gen = b.addSystemCommand(&[_][]const u8{ "./data/gen.py", "data/", unicode_generated_file });
+    const unicode_data_module = b.createModule(std.build.CreateModuleOptions{
+        .source_file = std.build.FileSource{
+            .path = unicode_generated_file,
+        },
+    });
+
     const exe = b.addExecutable(.{
         .name = "editor",
         // In this case the main source file is merely a path, however, in more
@@ -93,9 +102,11 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     {
-        exe.linkLibC();
         exe.addModule("terminfo", terminfo_module);
+        exe.addModule("unicode", unicode_data_module);
     }
+
+    exe.step.dependOn(&gen.step);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -133,8 +144,8 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     {
-        unit_tests.linkLibC();
         unit_tests.addModule("terminfo", terminfo_module);
+        unit_tests.addModule("unicode", unicode_data_module);
     }
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
