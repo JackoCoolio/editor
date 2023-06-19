@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import requests
 
 url = "https://www.unicode.org/Public/UCD/latest/ucd/"
