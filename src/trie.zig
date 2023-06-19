@@ -44,8 +44,7 @@ pub fn Trie(comptime K: type, comptime V: type, comptime config: Config(K)) type
             curr.value = value;
         }
 
-        /// Looks up the given sequence in the trie, returning null if it doesn't exist.
-        pub fn lookup_exact(self: *const Self, seq: []const K) ?V {
+        pub fn lookup_node_exact(self: *const Self, seq: []const K) ?*const Node {
             var curr = &self.root;
             var i: usize = 0;
             while (i < seq.len) : (i += 1) {
@@ -55,7 +54,22 @@ pub fn Trie(comptime K: type, comptime V: type, comptime config: Config(K)) type
                     curr = curr.get_next(byte) orelse return null;
                 }
             }
-            return curr.value;
+            return curr;
+        }
+
+        pub fn remove_sequence(self: *Self, seq: []const K) bool {
+            const node = self.lookup_node_exact(seq) orelse return false;
+            node.value = null;
+            // TODO: actually clean up the trie to remove dead branches
+        }
+
+        /// Looks up the given sequence in the trie, returning null if it doesn't exist.
+        pub fn lookup_exact(self: *const Self, seq: []const K) ?V {
+            if (self.lookup_node_exact(seq)) |node| {
+                return node.value;
+            } else {
+                return null;
+            }
         }
 
         const Longest = struct {
