@@ -27,6 +27,11 @@ pub fn Trie(comptime K: type, comptime V: type, comptime config: Config(K)) type
         }
 
         pub fn insert_sequence(self: *Self, seq: []const K, value: V) std.mem.Allocator.Error!void {
+            if (seq.len == 0) {
+                // redundant check. terminfo shouldn't give us empty strings
+                return;
+            }
+
             var curr = &self.root;
             var i: usize = 0;
             while (i < seq.len) : (i += 1) {
@@ -67,8 +72,11 @@ pub fn Trie(comptime K: type, comptime V: type, comptime config: Config(K)) type
             var last_value: ?Longest = null;
 
             chars: while (i < seq.len) : (i += 1) {
+                if (i == 0) {
+                    std.debug.assert(curr.value == null);
+                }
+
                 if (curr.value) |value| {
-                    std.debug.assert(i != 0);
                     last_value = .{ .value = value, .eaten = i };
                 }
 

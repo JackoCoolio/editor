@@ -109,7 +109,7 @@ pub const Terminal = struct {
 
     pub const InitError = error{
         InvalidTerm,
-    } || std.os.OpenError || Termios.Error || FetchTermDimensionsError || TermInfo.InitFromEnvError;
+    } || std.os.OpenError || std.os.WriteError || Termios.Error || FetchTermDimensionsError || TermInfo.InitFromEnvError;
 
     /// Create a new terminal.
     pub fn init(allocator: std.mem.Allocator) InitError!Self {
@@ -130,6 +130,10 @@ pub const Terminal = struct {
 
         // update terminal dimensions
         try terminal.fetchTermDimensions();
+
+        if (terminal.terminfo.strings.getValue(.keypad_xmit)) |keypad_xmit| {
+            _ = try terminal.write(keypad_xmit);
+        }
 
         return terminal;
     }
@@ -192,6 +196,10 @@ pub const Terminal = struct {
         self.termios.deinit() catch {
             std.log.warn("unable to restore cooked termios", .{});
         };
+
+        if (self.terminfo.strings.getValue(.keypad_local)) |keypad_local| {
+            _ = self.write(keypad_local) catch {};
+        }
 
         self.terminfo.deinit();
 
