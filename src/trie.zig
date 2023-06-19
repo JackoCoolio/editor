@@ -2,13 +2,14 @@ const std = @import("std");
 
 pub fn Config(
     comptime K: type,
+    comptime key_size: usize,
 ) type {
     return struct {
-        to_bytes: fn (K) [@sizeOf(K)]u8,
+        to_bytes: fn (K) [key_size]u8,
     };
 }
 
-pub fn Trie(comptime K: type, comptime V: type, comptime config: Config(K)) type {
+pub fn Trie(comptime K: type, comptime V: type, comptime key_size: usize, comptime config: Config(K, key_size)) type {
     return struct {
         const Self = @This();
 
@@ -55,6 +56,10 @@ pub fn Trie(comptime K: type, comptime V: type, comptime config: Config(K)) type
                 }
             }
             return curr;
+        }
+
+        pub fn has_prefix(self: *const Self, seq: []const K) bool {
+            return self.lookup_exact(seq) != null;
         }
 
         pub fn remove_sequence(self: *Self, seq: []const K) bool {
@@ -119,12 +124,14 @@ pub fn Trie(comptime K: type, comptime V: type, comptime config: Config(K)) type
             value: ?V,
             branches: [256]?*Node,
             allocator: std.mem.Allocator,
+            is_leaf: bool,
 
             pub fn init(allocator: std.mem.Allocator, value: ?V) Node {
                 return .{
                     .value = value,
                     .branches = std.mem.zeroes([256]?*Node),
                     .allocator = allocator,
+                    .is_leaf = true,
                 };
             }
 
@@ -135,6 +142,21 @@ pub fn Trie(comptime K: type, comptime V: type, comptime config: Config(K)) type
                         self.allocator.destroy(branch);
                     }
                 }
+            }
+
+            pub fn get_next_with_char(self: *const Node, char: K) ?*const Node {
+                var curr: *const Node = self;
+                const bytes = config.to_bytes(char);
+                for (bytes) |byte| {
+                    if (curr.get_next(byte)) |next| {
+                        curr = next;
+                        continue;
+                    }
+
+                    return null;
+                }
+
+                return curr;
             }
 
             pub fn get_next(self: *const Node, byte: u8) ?*const Node {
@@ -159,6 +181,7 @@ pub fn Trie(comptime K: type, comptime V: type, comptime config: Config(K)) type
                             const next_node = Node.init(self.allocator, value);
                             next_node_ptr.* = next_node;
                             self.branches[index] = next_node_ptr;
+                            self.is_leaf = false;
                             break :ptr next_node_ptr;
                         }
                     };
@@ -174,7 +197,7 @@ fn u8_to_arr(val: u8) [1]u8 {
 }
 
 pub fn ByteTrie(comptime V: type) type {
-    return Trie(u8, V, .{ .to_bytes = u8_to_arr });
+    return Trie(u8, V, 1, .{ .to_bytes = u8_to_arr });
 }
 
 test "lookup_exact" {

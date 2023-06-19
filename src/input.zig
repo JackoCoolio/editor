@@ -4,6 +4,7 @@ const terminfo = @import("terminfo");
 const Capability = terminfo.Strings.Capability;
 const TermInfo = terminfo.TermInfo;
 const utf8 = @import("utf8.zig");
+const EventQueue = @import("event_queue.zig").EventQueue;
 
 pub const Symbol = enum {
     // C0
@@ -92,11 +93,17 @@ pub const Key = struct {
         symbol: Symbol,
     };
 
-    pub fn get_utf8(self: *const Key, alloc: std.mem.Allocator) std.mem.Allocator.Error!?[]u8 {
+    /// Returns the UTF-8 representation of the Key. If the Key is a unicode
+    /// codepoint, the returned value is the UTF-8 encoding of the codepoint.
+    /// If it is a symbol that has a text representation, that is returned.
+    /// Caller is responsible for freeing the returned memory.
+    ///
+    /// The returned slice is guaranteed to be between 1 and 4 bytes, inclusive.
+    pub fn get_utf8(self: *const Key, buf: *[4]u8) ?[]u8 {
         return switch (self.code) {
-            .unicode => |cp| try utf8.cp_to_char(alloc, cp),
+            .unicode => |cp| utf8.cp_to_char(buf, cp),
             .symbol => |sym| switch (sym) {
-                .space => try utf8.cp_to_char(alloc, 0x20),
+                .space => utf8.cp_to_char(buf, 0x20),
                 else => null,
             },
         };
@@ -269,52 +276,6 @@ pub fn build_capabilities_trie(allocator: std.mem.Allocator, term_info: TermInfo
     return trie;
 }
 
-pub const InputEventQueue = struct {
-    allocator: std.mem.Allocator,
-    inner: *std.atomic.Queue(InputEvent),
-
-    pub fn init(allocator: std.mem.Allocator) std.mem.Allocator.Error!InputEventQueue {
-        const inner = blk: {
-            const inner_ptr = try allocator.create(std.atomic.Queue(InputEvent));
-            const inner = std.atomic.Queue(InputEvent).init();
-            inner_ptr.* = inner;
-            break :blk inner_ptr;
-        };
-
-        return InputEventQueue{
-            .allocator = allocator,
-            .inner = inner,
-        };
-    }
-
-    pub fn deinit(self: InputEventQueue) void {
-        var self_var = self;
-        while (self_var.get()) |_| {}
-        self.allocator.destroy(self.inner);
-    }
-
-    pub fn put(self: *InputEventQueue, event: InputEvent) std.mem.Allocator.Error!void {
-        const node = std.atomic.Queue(InputEvent).Node{
-            .data = event,
-        };
-
-        var node_ptr = try self.allocator.create(@TypeOf(node));
-        node_ptr.* = node;
-
-        self.inner.put(node_ptr);
-    }
-
-    pub fn get(self: *InputEventQueue) ?InputEvent {
-        const node_ptr = self.inner.get() orelse return null;
-        const data = node_ptr.data;
-
-        // free the node
-        self.allocator.destroy(node_ptr);
-
-        return data;
-    }
-};
-
 fn read_input(tty: std.os.fd_t, buf: []u8) std.os.ReadError![]u8 {
     var stream = std.io.fixedBufferStream(buf);
 
@@ -340,7 +301,7 @@ fn read_input(tty: std.os.fd_t, buf: []u8) std.os.ReadError![]u8 {
     }
 }
 
-pub fn input_thread_entry(alloc: std.mem.Allocator, tty: std.os.fd_t, trie: CapabilitiesTrie, event_queue: InputEventQueue) !void {
+pub fn input_thread_entry(alloc: std.mem.Allocator, tty: std.os.fd_t, trie: CapabilitiesTrie, event_queue: EventQueue(InputEvent)) !void {
     // it's stupid that I have to do this, andrewrk pls fix
     // immutable parameters are fine, just allow shadowing
     var event_queue_var = event_queue;

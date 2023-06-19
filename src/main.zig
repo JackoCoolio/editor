@@ -2,8 +2,11 @@ const std = @import("std");
 
 const terminal = @import("terminal.zig");
 const input = @import("input.zig");
+const InputEvent = input.InputEvent;
 const log = @import("log.zig");
 const utf8 = @import("utf8.zig");
+const EventQueue = @import("event_queue.zig").EventQueue;
+const keymap = @import("keymap.zig");
 
 pub const std_options = struct {
     pub const logFn = log.log_fn;
@@ -50,17 +53,25 @@ pub fn main() !void {
     std.debug.assert(term.terminfo.strings.getValue(.cursor_left) != null);
 
     init_log.info("creating input event queue", .{});
-    var event_queue = try input.InputEventQueue.init(allocator);
-    defer event_queue.deinit();
+    var input_event_queue = try EventQueue(InputEvent).init(allocator);
+    defer input_event_queue.deinit();
 
     init_log.info("building capabilities trie", .{});
     const trie = try input.build_capabilities_trie(allocator, term.terminfo);
     defer trie.deinit();
 
+    init_log.info("building keymaps", .{});
+    const keymap_settings = keymap.Settings{
+        .keymaps = try keymap.build_keymaps(allocator),
+        .key_timeout = 200 * std.time.ns_per_ms,
+    };
+    var action_ctx = try keymap.ActionContext.init(allocator, keymap_settings);
+    defer action_ctx.deinit();
+
     std.debug.assert(trie.lookup_longest(term.terminfo.strings.getValue(.cursor_left).?) != null);
 
     init_log.info("spawning input thread", .{});
-    const handle = try std.Thread.spawn(.{}, input.input_thread_entry, .{ allocator, term.tty, trie, event_queue });
+    const handle = try std.Thread.spawn(.{}, input.input_thread_entry, .{ allocator, term.tty, trie, input_event_queue });
     handle.detach();
 
     var exit_message = FixedStringBuffer(1024).init();
@@ -76,13 +87,15 @@ pub fn main() !void {
     const input_log = std.log.scoped(.input_handling);
     // spinloop
     while (true) {
-        if (event_queue.get()) |event| {
+        if (input_event_queue.get()) |event| {
             switch (event) {
                 .key => |key| {
+                    try action_ctx.handle_key(key);
                     switch (key.code) {
                         .unicode => |cp| {
                             // gets a slice to the non-null bytes
-                            const bytes = try utf8.cp_to_char(allocator, cp);
+                            var buf: [4]u8 = undefined;
+                            const bytes = utf8.cp_to_char(buf[0..4], cp);
                             defer allocator.free(bytes);
 
                             // bytes is 4 bytes max, and an escaped byte YY turns into "\xYY" (4 bytes).
@@ -109,7 +122,8 @@ pub fn main() !void {
                         },
                         .symbol => |sym| {
                             std.log.debug("symbol: {}", .{key});
-                            if (try key.get_utf8(allocator)) |bytes| {
+                            var buf: [4]u8 = undefined;
+                            if (key.get_utf8(&buf)) |bytes| {
                                 defer allocator.free(bytes);
                                 _ = try term.write(bytes);
                             } else {
@@ -123,6 +137,12 @@ pub fn main() !void {
                 // unimplemented for now
                 .mouse => unreachable,
             }
+        }
+
+        try action_ctx.check_timeout();
+
+        while (action_ctx.action_queue.get()) |action| {
+            std.log.info("action: {}", .{action});
         }
     }
 

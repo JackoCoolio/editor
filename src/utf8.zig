@@ -23,6 +23,8 @@ pub fn char_len(bytes: []const u8) u3 {
 /// Determines the number of bytes the given unicode codepoint would require in
 /// order to be encoded as UTF-8.
 ///
+/// Guaranteed to be between 1 and 4, inclusive.
+///
 /// Defaults to 1 if invalid.
 pub fn cp_len(cp: Codepoint) u3 {
     if (cp <= 0x007F) {
@@ -126,11 +128,11 @@ pub fn char_to_cp(bytes: []const u8) Codepoint {
 
 /// Returns an allocated buffer with the UTF-8 encoding of the given Unicode
 /// codepoint.
-pub fn cp_to_char(alloc: Allocator, cp: Codepoint) Allocator.Error![]u8 {
+/// The returned slice is guaranteed to be between 1 and 4 bytes, inclusive.
+pub fn cp_to_char(buf: *[4]u8, cp: Codepoint) []u8 {
     const len = cp_len(cp);
     std.debug.assert(len >= 1 and len <= 4);
 
-    var buf = try alloc.alloc(u8, len);
     @memset(buf, 0);
 
     // handle ascii case
@@ -157,7 +159,7 @@ pub fn cp_to_char(alloc: Allocator, cp: Codepoint) Allocator.Error![]u8 {
         else => unreachable,
     };
 
-    return buf;
+    return buf[0..len];
 }
 
 test "char_to_cp" {
@@ -223,7 +225,8 @@ pub fn change_case(alloc: Allocator, s: []const u8, case: Case) Allocator.Error!
             .upper => cp_to_upper(cp),
             .lower => cp_to_lower(cp),
         };
-        const new_char = try cp_to_char(alloc, new_cp);
+        var char_buf: [4]u8 = undefined;
+        const new_char = cp_to_char(&char_buf, new_cp);
         try buf.appendSlice(new_char);
         alloc.free(new_char);
     }
