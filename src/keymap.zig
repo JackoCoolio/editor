@@ -13,6 +13,8 @@ pub const ActionKind = enum {
     backspace,
     delete,
 
+    quit,
+
     // modes
     change_mode,
 
@@ -35,6 +37,8 @@ pub const Action = union(ActionKind) {
     tab,
     backspace,
     delete,
+
+    quit,
 
     change_mode: Mode,
 
@@ -111,20 +115,30 @@ pub fn build_keymaps(alloc: std.mem.Allocator) std.mem.Allocator.Error!Keymaps {
 
     const utf8 = @import("utf8.zig");
 
+    // quit
+    try keymaps.normal.insert_sequence(&[_]Key{.{ .code = .{ .unicode = comptime utf8.char_to_cp("e") }, .modifiers = .{ .control = true } }}, .{ .quit = {} });
+
+    // movement
     try keymaps.insert_all(&[_]Key{.{ .code = .{ .symbol = .up } }}, .{ .up = {} });
     try keymaps.insert_all(&[_]Key{.{ .code = .{ .symbol = .down } }}, .{ .down = {} });
     try keymaps.insert_all(&[_]Key{.{ .code = .{ .symbol = .left } }}, .{ .left = {} });
     try keymaps.insert_all(&[_]Key{.{ .code = .{ .symbol = .right } }}, .{ .right = {} });
+    try keymaps.normal.insert_sequence(&[_]Key{.{ .code = .{ .unicode = comptime utf8.char_to_cp("k") } }}, .{ .up = {} });
+    try keymaps.normal.insert_sequence(&[_]Key{.{ .code = .{ .unicode = comptime utf8.char_to_cp("j") } }}, .{ .down = {} });
+    try keymaps.normal.insert_sequence(&[_]Key{.{ .code = .{ .unicode = comptime utf8.char_to_cp("h") } }}, .{ .left = {} });
+    try keymaps.normal.insert_sequence(&[_]Key{.{ .code = .{ .unicode = comptime utf8.char_to_cp("l") } }}, .{ .right = {} });
+
+    // text editing
     try keymaps.insert.insert_sequence(&[_]Key{.{ .code = .{ .symbol = .backspace } }}, .{ .backspace = {} });
-    try keymaps.normal.insert_sequence(&[_]Key{.{ .code = .{ .symbol = .backspace } }}, .{ .left = {} });
     try keymaps.insert.insert_sequence(&[_]Key{.{ .code = .{ .symbol = .delete } }}, .{ .delete = {} });
 
+    // mode switching
     try keymaps.insert_all(&[_]Key{.{ .code = .{ .symbol = .escape } }}, .{ .change_mode = .normal });
     try keymaps.normal.insert_sequence(&[_]Key{.{ .code = .{ .unicode = comptime utf8.char_to_cp("i") } }}, .{ .change_mode = .insert });
     try keymaps.normal.insert_sequence(&[_]Key{.{ .code = .{ .unicode = comptime utf8.char_to_cp("v") } }}, .{ .change_mode = .select });
     try keymaps.normal.insert_sequence(&[_]Key{.{ .code = .{ .unicode = comptime utf8.char_to_cp(":") } }}, .{ .change_mode = .command });
 
-    try keymaps.insert_all(&[_]Key{ .{ .code = .{ .unicode = comptime utf8.char_to_cp("a") } }, .{ .code = .{ .unicode = comptime utf8.char_to_cp("b") } } }, .{ .delete = {} });
+    try keymaps.normal.insert_sequence(&[_]Key{ .{ .code = .{ .unicode = comptime utf8.char_to_cp("a") } }, .{ .code = .{ .unicode = comptime utf8.char_to_cp("b") } } }, .{ .delete = {} });
 
     return keymaps;
 }
@@ -168,16 +182,14 @@ pub const ActionContext = struct {
         };
 
         const is_within_timeout = if (self.last_keypress) |last_keypress| (if (now) |now_u| now_u.since(last_keypress) < self.settings.key_timeout else true) else true;
-        if (!is_within_timeout) {
+        if (!is_within_timeout and self.key_queue.len > 0) {
+            log.info("key timeout reached, handling queued keys", .{});
             // execute queued keys
             try self.handle_queued_keys();
         }
     }
 
     pub fn handle_queued_keys(self: *ActionContext) std.mem.Allocator.Error!void {
-        const log = std.log.scoped(.handle_queued_keys);
-        log.info("handling queued keys", .{});
-
         const keymaps = &self.settings.keymaps;
         var key_queue_s: []const Key = self.key_queue.constSlice();
         while (key_queue_s.len > 0) {
@@ -220,11 +232,15 @@ pub const ActionContext = struct {
 
         const keymap = self.get_current_keymap();
 
+        log.info("current key queue len: {}", .{self.key_queue.len});
+
         // invariant: the key queue must be a valid prefix at all times
         const node = keymap.lookup_node_exact(self.key_queue.constSlice()).?;
 
         if (node.get_next_with_char(key)) |with_key_node| {
+            log.info("key continues a valid prefix", .{});
             if (with_key_node.is_leaf) {
+                log.info("key queue is a leaf", .{});
                 if (with_key_node.value) |action| {
                     try self.action_queue.put(action);
                     self.key_queue.resize(0) catch unreachable;
@@ -233,19 +249,28 @@ pub const ActionContext = struct {
                     log.warn("key sequence maps to null action", .{});
                 }
             }
-        } else {
+        } else if (self.key_queue.len > 0) {
             // it's not a valid prefix now, so handle the queued keys
+            // this empties the key queue
+            log.info("handling queued keys before appending new key", .{});
             try self.handle_queued_keys();
+        }
+
+        if (keymap.lookup_node_exact(&[_]Key{key}) == null) {
+            // if the key isn't a valid prefix, just append a text-insertion
+            // action if the key has a text repr
+            var buf: [4]u8 = undefined;
+            if (key.get_utf8(&buf) != null) {
+                try self.action_queue.put(Action{ .insert_bytes = buf });
+            }
+            return;
         }
 
         // now the new key results in a valid prefix, so we can add it
         self.key_queue.append(key) catch {
             log.err("action key queue ran out of space", .{});
         };
+        self.last_keypress = std.time.Instant.now() catch null;
         log.info("appended {} to key queue", .{key});
-
-        if (!keymap.has_prefix(self.key_queue.constSlice())) {
-            try self.handle_queued_keys();
-        }
     }
 };

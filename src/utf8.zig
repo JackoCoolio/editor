@@ -228,7 +228,6 @@ pub fn change_case(alloc: Allocator, s: []const u8, case: Case) Allocator.Error!
         var char_buf: [4]u8 = undefined;
         const new_char = cp_to_char(&char_buf, new_cp);
         try buf.appendSlice(new_char);
-        alloc.free(new_char);
     }
 
     return try buf.toOwnedSlice();
@@ -253,19 +252,21 @@ test "change_case.upper" {
 }
 
 const MAX_ASCII = 127;
-fn cp_to_upper(cp: Codepoint) Codepoint {
+pub fn cp_to_upper(cp: Codepoint) ?Codepoint {
     if (cp <= MAX_ASCII) {
-        return @as(Codepoint, std.ascii.toUpper(@truncate(u8, cp)));
+        const upper = @as(Codepoint, std.ascii.toUpper(@truncate(u8, cp)));
+        return if (cp == upper) null else upper;
     }
 
-    return search_entries(&unicode.to_upper_table, cp) orelse cp;
+    return search_entries(&unicode.to_upper_table, cp);
 }
 
-fn cp_to_lower(cp: Codepoint) Codepoint {
+pub fn cp_to_lower(cp: Codepoint) ?Codepoint {
     if (cp <= MAX_ASCII) {
-        return @as(Codepoint, std.ascii.toLower(@truncate(u8, cp)));
+        const lower = @as(Codepoint, std.ascii.toLower(@truncate(u8, cp)));
+        return if (cp == lower) null else lower;
     }
 
-    return search_entries(&unicode.to_lower_table, cp) orelse cp;
+    return search_entries(&unicode.to_lower_table, cp);
 }
 

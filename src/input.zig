@@ -181,7 +181,7 @@ pub const Key = struct {
     }
 
     pub const FromCodepointError = error{UnknownC0} || std.mem.Allocator.Error;
-    pub fn from_utf8_char(alloc: std.mem.Allocator, char: []const u8) FromCodepointError!Key {
+    pub fn from_utf8_char(char: []const u8) FromCodepointError!Key {
         const cp = utf8.char_to_cp(char);
 
         // NUL, which by convention is C-Space
@@ -200,19 +200,22 @@ pub const Key = struct {
 
         // check for C0 range keys
         if (cp <= 0x20) {
-            const sym: Symbol = switch (cp) {
+            const sym: ?Symbol = switch (cp) {
                 0x1b => .escape,
                 0x08 => .backspace,
                 0x09 => .tab,
                 0x0d => .enter,
                 0x20 => .space,
-                else => return error.UnknownC0,
+                else => null,
             };
-            return .{
-                .code = .{
-                    .symbol = sym,
-                },
-            };
+
+            if (sym) |sym_u| {
+                return .{
+                    .code = .{
+                        .symbol = sym_u,
+                    },
+                };
+            }
         }
 
         // control alphas
@@ -229,13 +232,11 @@ pub const Key = struct {
         }
 
         // shifted keys
-        const unshifted = try utf8.change_case(alloc, char, .lower);
-        defer alloc.free(unshifted);
-        if (!std.mem.eql(u8, char, unshifted)) {
-            const unshifted_cp = utf8.char_to_cp(unshifted);
+        if (utf8.cp_to_lower(cp)) |unshifted| {
+            std.log.info("0x{x} is shifted from 0x{x}", .{cp, unshifted});
             return .{
                 .code = .{
-                    .unicode = unshifted_cp,
+                    .unicode = unshifted,
                 },
                 .modifiers = .{
                     .shift = true,
@@ -301,7 +302,7 @@ fn read_input(tty: std.os.fd_t, buf: []u8) std.os.ReadError![]u8 {
     }
 }
 
-pub fn input_thread_entry(alloc: std.mem.Allocator, tty: std.os.fd_t, trie: CapabilitiesTrie, event_queue: EventQueue(InputEvent)) !void {
+pub fn input_thread_entry(tty: std.os.fd_t, trie: CapabilitiesTrie, event_queue: EventQueue(InputEvent)) !void {
     // it's stupid that I have to do this, andrewrk pls fix
     // immutable parameters are fine, just allow shadowing
     var event_queue_var = event_queue;
@@ -324,7 +325,7 @@ pub fn input_thread_entry(alloc: std.mem.Allocator, tty: std.os.fd_t, trie: Capa
             } else {
                 const char = utf8.recognize(input);
                 input = input[char.len..];
-                try event_queue_var.put(.{ .key = try Key.from_utf8_char(alloc, char) });
+                try event_queue_var.put(.{ .key = try Key.from_utf8_char(char) });
             }
         }
     }
