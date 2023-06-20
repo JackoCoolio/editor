@@ -7,6 +7,7 @@ const log = @import("log.zig");
 const utf8 = @import("utf8.zig");
 const EventQueue = @import("event_queue.zig").EventQueue;
 const keymap = @import("keymap.zig");
+const Editor = @import("editor.zig").Editor;
 
 pub const std_options = struct {
     pub const logFn = log.log_fn;
@@ -74,6 +75,9 @@ pub fn main() !void {
     const handle = try std.Thread.spawn(.{}, input.input_thread_entry, .{ term.tty, trie, input_event_queue });
     handle.detach();
 
+    init_log.info("creating editor and starting compositor", .{});
+    const editor = Editor.init(allocator);
+
     var exit_message = FixedStringBuffer(1024).init();
 
     // enter raw mode
@@ -86,6 +90,9 @@ pub fn main() !void {
 
     // spinloop
     input_loop: while (true) {
+        while (input_event_queue.get()) |event| {
+            editor.handle_input(event);
+        }
         if (input_event_queue.get()) |event| {
             switch (event) {
                 .key => |key| {

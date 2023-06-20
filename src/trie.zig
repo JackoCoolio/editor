@@ -27,7 +27,14 @@ pub fn Trie(comptime K: type, comptime V: type, comptime key_size: usize, compti
             self.root.deinit();
         }
 
-        pub fn insert_sequence(self: *Self, seq: []const K, value: V) std.mem.Allocator.Error!void {
+        pub fn clone(self: *const Self, allocator: std.mem.Allocator) Self {
+            return .{
+                .allocator = allocator,
+                .root = self.root.clone(),
+            };
+        }
+
+        pub fn insert_sequence(self: *Self, seq: []const K, value: ?V) std.mem.Allocator.Error!void {
             if (seq.len == 0) {
                 // redundant check. terminfo shouldn't give us empty strings
                 return;
@@ -142,6 +149,24 @@ pub fn Trie(comptime K: type, comptime V: type, comptime key_size: usize, compti
                         self.allocator.destroy(branch);
                     }
                 }
+            }
+
+            pub fn clone(self: *const Node) Node {
+                var branches: [256]?*Node = undefined;
+                @memset(branches, null);
+                for (0..self.branches.len) |i| {
+                    const child_m = self.branches[i];
+                    if (child_m) |child| {
+                        branches[i] = child.clone();
+                    }
+                }
+
+                return .{
+                    .value = self.value,
+                    .branches = branches,
+                    .allocator = self.allocator,
+                    .is_leaf = self.is_leaf,
+                };
             }
 
             pub fn get_next_with_char(self: *const Node, char: K) ?*const Node {
