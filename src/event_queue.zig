@@ -46,5 +46,10 @@ pub fn EventQueue(comptime E: type) type {
 
             return data;
         }
+
+        pub fn tail(self: *const Self) ?E {
+            const node = self.inner.tail orelse return null;
+            return node.data;
+        }
     };
 }

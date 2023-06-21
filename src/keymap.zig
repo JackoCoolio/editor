@@ -234,20 +234,27 @@ pub const PatchedKeymaps = struct {
     };
 };
 
+pub const ContextualAction = struct {
+    action: Action,
+    mode: Mode,
+};
+
 pub const ActionContext = struct {
     settings: Settings,
-    keymaps: PatchedKeymaps,
+    keymaps: Keymaps,
     last_keypress: ?std.time.Instant,
-    action_queue: EventQueue(struct { Action, Mode }),
+    action_queue: EventQueue(ContextualAction),
+    mode: Mode,
     key_queue: std.BoundedArray(Key, 16),
 
-    pub fn init(alloc: std.mem.Allocator, keymaps: PatchedKeymaps, settings: Settings) std.mem.Allocator.Error!ActionContext {
+    pub fn init(alloc: std.mem.Allocator, keymaps: Keymaps, settings: Settings, mode: Mode) std.mem.Allocator.Error!ActionContext {
         return ActionContext{
             .settings = settings,
             .keymaps = keymaps,
             .last_keypress = null,
-            .action_queue = try EventQueue(Action).init(alloc),
+            .action_queue = try EventQueue(ContextualAction).init(alloc),
             .key_queue = std.BoundedArray(Key, 16).init(0) catch unreachable,
+            .mode = mode,
         };
     }
 
@@ -256,7 +263,14 @@ pub const ActionContext = struct {
         self.keymaps.deinit();
     }
 
-    pub fn check_timeout(self: *ActionContext, mode: Mode) std.mem.Allocator.Error!Mode {
+    pub fn reset(self: *ActionContext, mode: Mode) void {
+        self.key_queue.resize(0) catch {};
+        while (self.action_queue.get()) |_| {}
+        self.last_keypress = null;
+        self.mode = mode;
+    }
+
+    pub fn check_timeout(self: *ActionContext) std.mem.Allocator.Error!void {
         const log = std.log.scoped(.check_timeout);
 
         const now = std.time.Instant.now() catch blk: {
@@ -268,94 +282,121 @@ pub const ActionContext = struct {
         if (!is_within_timeout and self.key_queue.len > 0) {
             log.info("key timeout reached, handling queued keys", .{});
             // execute queued keys
-            return try self.handle_queued_keys(mode);
+            try self.handle_queued_keys();
         }
-
-        return mode;
     }
 
-    fn handle_queued_keys(self: *ActionContext, mode: Mode) std.mem.Allocator.Error!Mode {
-        const keymaps = try self.keymaps.get_patched();
-        var key_queue_s: []const Key = self.key_queue.constSlice();
-        var curr_mode = mode;
-        while (key_queue_s.len > 0) {
-            if (keymaps.get_from_mode(curr_mode).lookup_longest(key_queue_s)) |longest| {
-                key_queue_s = key_queue_s[longest.eaten..];
+    /// Returns the mode that the editor will be in after executing all of the
+    /// actions in this action queue.
+    pub fn get_curr_mode(self: *const ActionContext) Mode {
+        const ctx_action = self.action_queue.tail() orelse return self.mode;
+        return switch (ctx_action.action) {
+            .change_mode => |mode| mode,
+            else => ctx_action.mode,
+        };
+    }
+
+    /// Consumes queued keys, and appends the generated actions to the action
+    /// queue.
+    fn handle_queued_keys(self: *ActionContext) std.mem.Allocator.Error!void {
+        var rem_keys: []const Key = self.key_queue.constSlice();
+        var curr_mode = self.get_curr_mode();
+        while (rem_keys.len > 0) {
+            if (self.keymaps.get_from_mode(curr_mode).lookup_longest(rem_keys)) |longest| {
+                // we found an action for this key sequence
+                rem_keys = rem_keys[longest.eaten..];
                 const action: Action = longest.value;
+                // if the action is a .change_mode action, we need to adjust the mode
+                // or the rest of the keys won't make sense.
+                // we also need to convey this information to the editor somehow
+                try self.action_queue.put(.{ .action = action, .mode = curr_mode });
                 switch (action) {
                     .change_mode => |new_mode| {
-                        curr_mode = new_mode;
+                        self.mode = new_mode;
                     },
-                    else => try self.action_queue.put(.{ action, curr_mode }),
+                    else => {},
                 }
             } else {
-                const key = key_queue_s[0];
-                key_queue_s = key_queue_s[1..];
+                // there weren't any actions for this key, so just append an .insert_bytes action
+                const key = rem_keys[0];
+                rem_keys = rem_keys[1..];
 
-                var buf = std.mem.zeroes([4]u8);
+                var buf: [4]u8 = undefined;
                 if (key.get_utf8(&buf)) |_| {
-                    // this is technically unnecessary because the allocator
-                    // only exists within this function call, but for
-                    // consistency, I'll free it
-                    try self.action_queue.put(.{ Action{ .insert_bytes = buf }, curr_mode });
+                    try self.action_queue.put(.{ .action = Action{ .insert_bytes = buf }, .mode = curr_mode });
                 }
             }
         }
 
         // resize to 0 should never fail because 0 <= 16
         self.key_queue.resize(0) catch unreachable;
-
-        return curr_mode;
     }
 
-    fn get_current_keymap(self: *const ActionContext, mode: *Mode) std.mem.Allocator.Error!*const KeymapTrie {
-        return (try self.keymaps.get_patched()).get_from_mode(mode.*);
+    fn get_current_keymap(self: *const ActionContext) std.mem.Allocator.Error!*const KeymapTrie {
+        return self.keymaps.get_from_mode(self.mode);
     }
 
-    pub fn handle_key(self: *ActionContext, key: Key, mode: Mode) std.mem.Allocator.Error!Mode {
+    pub fn handle_key(self: *ActionContext, key: Key) std.mem.Allocator.Error!void {
         const log = std.log.scoped(.handle_key);
 
-        var curr_mode = mode;
+        var curr_mode = self.get_curr_mode();
 
-        curr_mode = try self.check_timeout(curr_mode);
+        log.info("current mode: {s}", .{@tagName(curr_mode)});
 
-        const keymap = try self.get_current_keymap(curr_mode);
-
-        log.info("current key queue len: {}", .{self.key_queue.len});
+        const keymap = try self.get_current_keymap();
 
         // invariant: the key queue must be a valid prefix at all times
         const node = keymap.lookup_node_exact(self.key_queue.constSlice()).?;
 
         if (node.get_next_with_char(key)) |with_key_node| {
-            log.info("key continues a valid prefix", .{});
+            log.info("key continues valid prefix", .{});
+            // the key continues a valid prefix
             if (with_key_node.is_leaf) {
-                log.info("key queue is a leaf", .{});
+                // the key queue is a leaf, so consume all of the keys and append the action
+                log.info("key sequence is leaf", .{});
+
                 if (with_key_node.value) |action| {
-                    try self.action_queue.put(.{ action, curr_mode });
-                    self.key_queue.resize(0) catch unreachable;
-                    return;
+                    switch (action) {
+                        .change_mode => |new_mode| {
+                            self.mode = new_mode;
+                        },
+                        else => {},
+                    }
+                    try self.action_queue.put(.{ .action = action, .mode = curr_mode });
                 } else {
                     log.warn("key sequence maps to null action", .{});
                 }
+
+                self.key_queue.resize(0) catch unreachable;
+
+                // key was handled
+                return;
             }
-        } else if (self.key_queue.len > 0) {
-            // it's not a valid prefix now, so handle the queued keys
-            // this empties the key queue
-            log.info("handling queued keys before appending new key", .{});
-            curr_mode = try self.handle_queued_keys(curr_mode);
+        } else {
+            // the key does not continue a valid prefix. handle the queued keys first
+            if (self.key_queue.len > 0) {
+                log.info("handling queued keys", .{});
+                try self.handle_queued_keys();
+            }
+
+            // update the current mode in case it changed
+            curr_mode = self.get_curr_mode();
+
+            if (!keymap.has_prefix(&[_]Key{key})) {
+                log.info("keymap doesn't have prefix with this beginning; inserting bytes", .{});
+                // if the key isn't a valid prefix, just append an .insert_bytes action
+                var buf: [4]u8 = undefined;
+                if (key.get_utf8(&buf) != null) {
+                    try self.action_queue.put(.{ .action = Action{ .insert_bytes = buf }, .mode = curr_mode });
+                }
+
+                // key was handled
+                return;
+            }
         }
 
-        if (keymap.lookup_node_exact(&[_]Key{key}) == null) {
-            // if the key isn't a valid prefix, just append a text-insertion
-            // action if the key has a text repr
-            var buf: [4]u8 = undefined;
-            if (key.get_utf8(&buf) != null) {
-                try self.action_queue.put(.{ Action{ .insert_bytes = buf }, curr_mode });
-            }
-            return;
-        }
-
-        // now the new key results in a valid prefix, so we can add it
+        log.info("key is valid prefix", .{});
+        // it's a prefix
         self.key_queue.append(key) catch {
             log.err("action key queue ran out of space", .{});
         };

@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const terminal = @import("terminal.zig");
+const Terminal = @import("terminal.zig").Terminal;
 const input = @import("input.zig");
 const InputEvent = input.InputEvent;
 const log = @import("log.zig");
@@ -48,98 +48,51 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     init_log.info("initializing terminal", .{});
-    var term = try terminal.Terminal.init(allocator);
-    defer term.deinit();
+    var terminal = try Terminal.init(allocator);
+    defer terminal.deinit();
 
-    std.debug.assert(term.terminfo.strings.getValue(.cursor_left) != null);
+    std.debug.assert(terminal.terminfo.strings.getValue(.cursor_left) != null);
 
     init_log.info("creating input event queue", .{});
     var input_event_queue = try EventQueue(InputEvent).init(allocator);
     defer input_event_queue.deinit();
 
     init_log.info("building capabilities trie", .{});
-    const trie = try input.build_capabilities_trie(allocator, term.terminfo);
+    const trie = try input.build_capabilities_trie(allocator, terminal.terminfo);
     defer trie.deinit();
 
-    init_log.info("building keymaps", .{});
-    const keymap_settings = keymap.Settings{
-        .keymaps = try keymap.build_keymaps(allocator),
-        .key_timeout = 1000 * std.time.ns_per_ms,
-    };
-    var action_ctx = try keymap.ActionContext.init(allocator, keymap_settings);
-    defer action_ctx.deinit();
-
-    std.debug.assert(trie.lookup_longest(term.terminfo.strings.getValue(.cursor_left).?) != null);
-
     init_log.info("spawning input thread", .{});
-    const handle = try std.Thread.spawn(.{}, input.input_thread_entry, .{ term.tty, trie, input_event_queue });
+    const handle = try std.Thread.spawn(.{}, input.input_thread_entry, .{ terminal.tty, trie, input_event_queue });
     handle.detach();
 
     init_log.info("creating editor and starting compositor", .{});
-    const editor = Editor.init(allocator);
+    var editor = Editor.init(allocator, &terminal);
+    try editor.open_file("/home/jtwam/dev/editor-zig/README.md", true);
 
     var exit_message = FixedStringBuffer(1024).init();
 
     // enter raw mode
     init_log.info("entering raw mode", .{});
-    try term.termios.makeRaw();
-    errdefer term.termios.makeCooked() catch {};
+    try terminal.termios.makeRaw();
+    errdefer terminal.termios.makeCooked() catch {};
 
     init_log.info("clearing screen", .{});
-    try term.exec(.clear_screen);
+    try terminal.exec(.clear_screen);
 
-    // spinloop
-    input_loop: while (true) {
-        while (input_event_queue.get()) |event| {
-            editor.handle_input(event);
-        }
-        if (input_event_queue.get()) |event| {
-            switch (event) {
-                .key => |key| {
-                    try action_ctx.handle_key(key);
-                },
-                // unimplemented for now
-                .mouse => unreachable,
-            }
-        }
-
-        try action_ctx.check_timeout();
-
-        while (action_ctx.action_queue.get()) |action| {
-            std.log.info("action: {}", .{action});
-            switch (action) {
-                .quit => break :input_loop,
-                .up => try term.exec(.cursor_up),
-                .down => try term.exec(.cursor_down),
-                .left => try term.exec(.cursor_left),
-                .right => try term.exec(.cursor_right),
-                .tab => {
-                    if (action_ctx.mode == .insert) {
-                        _ = try term.write("  ");
-                    }
-                },
-                .insert_bytes => |bytes| {
-                    if (action_ctx.mode == .insert) {
-                        const char = utf8.recognize(&bytes);
-                        _ = try term.write(char);
-                    }
-                },
-                .change_mode => |new_mode| {
-                    action_ctx.mode = new_mode;
-                },
-                else => {},
-            }
-        }
+    {
+        // main loop
+        try editor.loop(&input_event_queue);
+        // after this point, the editor is exiting
     }
 
     const cleanup_log = std.log.scoped(.cleanup);
 
     cleanup_log.info("resetting terminal and cursor position", .{});
-    try term.exec(.clear_screen);
-    try term.exec(.cursor_home);
+    try terminal.exec(.clear_screen);
+    try terminal.exec(.cursor_home);
 
     // reset termios to cooked mode
-    try term.termios.makeCooked();
+    try terminal.termios.makeCooked();
 
     if (exit_message.size > 0) {
         cleanup_log.info("logging exit message to stdout", .{});
