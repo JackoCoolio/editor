@@ -8,23 +8,33 @@ const Buffer = @import("Buffer.zig");
 const input = @import("input.zig");
 const InputEvent = input.InputEvent;
 const Terminal = @import("terminal.zig").Terminal;
+const Editor = @import("editor.zig").Editor;
+const Grid = @import("Grid.zig");
+const utf8 = @import("utf8.zig");
+const Graphemes = utf8.Graphemes;
 
-pub const Rect = struct {
-    x: u32,
-    y: u32,
+pub const Dimensions = struct {
     width: u32,
     height: u32,
+};
+
+pub const Position = struct {
+    row: u32,
+    col: u32,
 };
 
 pub const Compositor = struct {
     alloc: Allocator,
     elements: std.ArrayList(Element),
-    dimensions: Rect,
+    dimensions: Dimensions,
+    grid: Grid,
+    cursor_pos: Position,
+    focused: ?usize,
 
     pub const Event = union(enum) {
         resize: struct {
-            old: Rect,
-            new: Rect,
+            old: Dimensions,
+            new: Dimensions,
         },
         focus_gained,
         focus_lost,
@@ -38,16 +48,54 @@ pub const Compositor = struct {
         };
     };
 
-    pub fn init(alloc: Allocator, dimensions: Rect) Compositor {
+    pub fn init(alloc: Allocator, dimensions: Dimensions) Allocator.Error!Compositor {
         return .{
             .alloc = alloc,
             .elements = std.ArrayList(Element).init(alloc),
             .dimensions = dimensions,
+            .grid = try Grid.init(alloc, dimensions.width, dimensions.height),
+            .cursor_pos = .{
+                .row = 0,
+                .col = 0,
+            },
+            .focused = null,
         };
+    }
+
+    pub fn focus(self: *Compositor, idx: usize) !void {
+        var ctx = .{
+            .should_exit = false,
+        };
+        if (self.focused) |old| {
+            _ = try self.elements.items[old].handle_event(.focus_lost, &ctx);
+        }
+        self.focused = idx;
+
+        _ = try self.elements.items[idx].handle_event(.focus_gained, &ctx);
     }
 
     pub fn push(self: *Compositor, element: Element) Allocator.Error!void {
         try self.elements.append(element);
+
+        var event_ctx = .{ .should_exit = false };
+        _ = element.handle_event(.{
+            .resize = .{
+                .old = .{
+                    .width = self.dimensions.width,
+                    .height = self.dimensions.height,
+                },
+                .new = .{
+                    .width = self.dimensions.width,
+                    .height = self.dimensions.height,
+                },
+            },
+        }, &event_ctx) catch {
+            std.log.info("element failed to handle resize event", .{});
+        };
+
+        if (self.focused == null) {
+            self.focus(self.elements.items.len - 1) catch unreachable;
+        }
     }
 
     pub fn pop(self: *Compositor) ?Element {
@@ -83,6 +131,11 @@ pub const Compositor = struct {
         return null;
     }
 
+    fn get_cursor_pos(self: *const Compositor, ctx: RenderContext) !?Position {
+        const focused = self.focused orelse return null;
+        return try self.elements.items[focused].get_cursor_pos(ctx);
+    }
+
     pub fn check_timeouts(self: *Compositor) Allocator.Error!void {
         for (self.elements.items) |elt| {
             const action_ctx = elt.action_ctx orelse continue;
@@ -111,12 +164,56 @@ pub const Compositor = struct {
         }
     }
 
-    pub fn render(self: *Compositor, terminal: *const Terminal) void {
-        _ = terminal;
+    pub const RenderContext = struct {
+        editor: *const Editor,
+    };
+
+    fn compose(self: *Compositor, ctx: RenderContext) !bool {
         const elements: []const Element = self.elements.items;
+        const dirty = for (elements) |elt| {
+            if (!elt.has_rendered or try elt.should_render(ctx)) {
+                break true;
+            }
+        } else false;
+
+        if (!dirty) {
+            return false;
+        }
+
         for (elements) |elt| {
-            _ = elt;
-            // elt.render(terminal);
+            if (try elt.render(ctx)) |grid| {
+                self.grid.compose(grid, elt.x, elt.y);
+            }
+        }
+
+        return true;
+    }
+
+    pub fn render(self: *Compositor, terminal: *const Terminal, ctx: RenderContext) !void {
+        const should_redraw = try self.compose(ctx);
+
+        if (should_redraw) {
+            try terminal.exec(.cursor_home);
+            try terminal.exec(.cursor_invisible);
+            for (0..self.grid.height) |row| {
+                const bytes = self.grid.get_row_bytes(row);
+                _ = try terminal.write(bytes);
+                try terminal.exec(.cursor_home);
+                for (0..row) |_| {
+                    try terminal.exec(.cursor_down);
+                }
+            }
+        }
+
+        if (try self.get_cursor_pos(ctx)) |pos| {
+            try terminal.exec(.cursor_home);
+            for (0..pos.row) |_| {
+                try terminal.exec(.cursor_down);
+            }
+            for (0..pos.col) |_| {
+                try terminal.exec(.cursor_right);
+            }
+            try terminal.exec(.cursor_visible);
         }
     }
 };
@@ -126,6 +223,7 @@ pub const EventContext = struct {
 };
 
 pub const Window = struct {
+    alloc: Allocator,
     buffer: Buffer.Id,
     focused: bool,
     cursor_pos: struct {
@@ -133,15 +231,21 @@ pub const Window = struct {
         col: u32,
     } = .{ .row = 0, .col = 0 },
     action_ctx: ActionContext,
+    grid: ?Grid,
 
     pub fn element(self: *Window) Element {
         return Element{
             .ptr = self,
-            .action_ctx = &self.action_ctx,
             .vtable = .{
                 .handle_event = handle_event,
                 .handle_action = handle_action,
+                .should_render = should_render,
+                .render = render,
+                .get_cursor_pos = get_cursor_pos,
             },
+            .action_ctx = &self.action_ctx,
+            .x = 0,
+            .y = 0,
         };
     }
 
@@ -206,10 +310,52 @@ pub const Window = struct {
         switch (event) {
             .focus_gained => self.focused = true,
             .focus_lost => self.focused = false,
-            else => unreachable,
+            .resize => |change| {
+                if (self.grid) |*grid| {
+                    grid.deinit();
+                }
+
+                self.grid = try Grid.init(self.alloc, change.new.width, change.new.height);
+            },
         }
 
         return .consumed;
+    }
+
+    fn should_render(dyn: *anyopaque, ctx: Compositor.RenderContext) !bool {
+        const self = @ptrCast(*Window, @alignCast(@alignOf(Window), dyn));
+        const buffer = ctx.editor.get_buffer(self.buffer) orelse return false;
+
+        return buffer.dirty;
+    }
+
+    fn get_cursor_pos(dyn: *anyopaque, ctx: Compositor.RenderContext) !?Position {
+        _ = ctx;
+        const self = @ptrCast(*Window, @alignCast(@alignOf(Window), dyn));
+
+        return .{
+            .row = self.cursor_pos.row,
+            .col = self.cursor_pos.col,
+        };
+    }
+
+    fn render(dyn: *anyopaque, ctx: Compositor.RenderContext) !?*const Grid {
+        const self = @ptrCast(*Window, @alignCast(@alignOf(Window), dyn));
+        const grid = if (self.grid) |*grid| grid else return null;
+
+        const buffer = ctx.editor.get_buffer(self.buffer) orelse return null;
+
+        var lines = buffer.lines();
+
+        var line_num: usize = 0;
+        while (lines.next()) |line| : (line_num += 1) {
+            var graphemes = Graphemes.from(line);
+            const bytes = try graphemes.into_bytes(self.alloc);
+            const dst_row = grid.get_row_bytes(line_num);
+            @memcpy(dst_row[0..bytes.len], bytes);
+        }
+
+        return grid;
     }
 };
 
@@ -225,18 +371,21 @@ pub const Split = union(enum(u8)) {
     full: *Window,
 };
 
-pub const RootElement = struct {};
-
 pub const Element = struct {
     ptr: *anyopaque,
-    action_ctx: ?*keymap.ActionContext,
     vtable: VTable,
+    action_ctx: ?*keymap.ActionContext,
+    x: i32,
+    y: i32,
+    has_rendered: bool = false,
 
     const VTable = struct {
         /// Handles the given input, returning `true` if an action is enqueued.
         handle_action: *const fn (*anyopaque, keymap.ContextualAction) anyerror!void,
         handle_event: *const fn (*anyopaque, Compositor.Event, *EventContext) anyerror!Compositor.Event.Response,
-        // render: *const fn (*anyopaque, *const Terminal) void,
+        render: *const fn (*anyopaque, Compositor.RenderContext) anyerror!?*const Grid,
+        should_render: *const fn (*anyopaque, Compositor.RenderContext) anyerror!bool,
+        get_cursor_pos: *const fn (*anyopaque, Compositor.RenderContext) anyerror!?Position,
     };
 
     pub fn handle_action(self: *const Element, action: keymap.ContextualAction) !void {
@@ -247,9 +396,17 @@ pub const Element = struct {
         return try self.vtable.handle_event(self.ptr, event, event_ctx);
     }
 
-    // pub fn render(self: *const Element, terminal: *const Terminal) void {
-    //     return self.vtable.render(self.ptr, terminal);
-    // }
+    pub fn render(self: *const Element, ctx: Compositor.RenderContext) !?*const Grid {
+        return try self.vtable.render(self.ptr, ctx);
+    }
+
+    pub fn should_render(self: *const Element, ctx: Compositor.RenderContext) !bool {
+        return try self.vtable.should_render(self.ptr, ctx);
+    }
+
+    pub fn get_cursor_pos(self: *const Element, ctx: Compositor.RenderContext) !?Position {
+        return try self.vtable.get_cursor_pos(self.ptr, ctx);
+    }
 
     /// Checks if the element has any queued actions. If so, tells the
     /// element to handle the actions, and then returns true.

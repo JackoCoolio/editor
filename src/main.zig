@@ -51,8 +51,6 @@ pub fn main() !void {
     var terminal = try Terminal.init(allocator);
     defer terminal.deinit();
 
-    std.debug.assert(terminal.terminfo.strings.getValue(.cursor_left) != null);
-
     init_log.info("creating input event queue", .{});
     var input_event_queue = try EventQueue(InputEvent).init(allocator);
     defer input_event_queue.deinit();
@@ -66,7 +64,7 @@ pub fn main() !void {
     handle.detach();
 
     init_log.info("creating editor and starting compositor", .{});
-    var editor = Editor.init(allocator, &terminal);
+    var editor = try Editor.init(allocator, &terminal);
     try editor.open_file("/home/jtwam/dev/editor-zig/README.md", true);
 
     var exit_message = FixedStringBuffer(1024).init();

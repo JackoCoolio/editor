@@ -67,3 +67,33 @@ pub fn init_from_data(alloc: Allocator, data: []u8, save_location: ?[]const u8) 
         .dirty = false,
     };
 }
+
+pub const Lines = struct {
+    rem: []const u8,
+
+    pub fn next(self: *Lines) ?[]const u8 {
+        if (self.rem.len == 0) {
+            return null;
+        }
+
+        var len: usize = 0;
+
+        while (len < self.rem.len) : (len += 1) {
+            if (self.rem[len] == '\n') {
+                const result = if (len > 0 and self.rem[len - 1] == '\r') self.rem[0 .. len - 1] else self.rem[0..len];
+                self.rem = self.rem[len + 1 ..];
+                return result;
+            }
+        }
+
+        const result = self.rem;
+        self.rem = self.rem[len..len];
+        return result;
+    }
+};
+
+pub fn lines(self: *const Buffer) Lines {
+    return .{
+        .rem = self.data,
+    };
+}
