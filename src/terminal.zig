@@ -1,5 +1,6 @@
 const std = @import("std");
 const TermInfo = @import("terminfo").TermInfo;
+const Parameter = @import("terminfo").Strings.Parameter;
 const input = @import("input.zig");
 const Trie = @import("trie.zig").Trie;
 const Capability = @import("terminfo").Strings.Capability;
@@ -131,9 +132,7 @@ pub const Terminal = struct {
         // update terminal dimensions
         try terminal.fetchTermDimensions();
 
-        if (terminal.terminfo.strings.getValue(.keypad_xmit)) |keypad_xmit| {
-            _ = try terminal.write(keypad_xmit);
-        }
+        terminal.exec(.keypad_xmit) catch {};
 
         return terminal;
     }
@@ -197,9 +196,7 @@ pub const Terminal = struct {
             std.log.warn("unable to restore cooked termios", .{});
         };
 
-        if (self.terminfo.strings.getValue(.keypad_local)) |keypad_local| {
-            _ = self.write(keypad_local) catch {};
-        }
+        self.exec(.keypad_local) catch {};
 
         self.terminfo.deinit();
 
@@ -211,11 +208,15 @@ pub const Terminal = struct {
     /// Executes the given capability. Returns an error if the capability is
     /// unavailable or the TTY could not be written to.
     pub fn exec(self: *const Self, cap: Capability) ExecError!void {
-        const cap_val = self.terminfo.strings.getValue(cap);
-        if (cap_val) |cap_val_u| {
-            _ = try self.write(cap_val_u);
-        } else {
-            return error.FnUnavailableError;
-        }
+        const cap_val = self.terminfo.strings.get_value(cap) orelse return error.FnUnavailableError;
+        _ = try self.write(cap_val);
+    }
+
+    pub const ExecWithArgsError = ExecError || std.mem.Allocator.Error || error{ InvalidFormat, InvalidArguments };
+    pub fn exec_with_args(self: *const Self, alloc: std.mem.Allocator, cap: Capability, args: []const Parameter) ExecWithArgsError!void {
+        const seq = try self.terminfo.strings.get_value_with_args(alloc, cap, args) orelse return error.FnUnavailableError;
+        // std.log.info("cap: {s}, seq: {s}", .{ @tagName(cap), std.fmt.fmtSliceEscapeLower(seq) });
+        defer alloc.free(seq);
+        _ = try self.write(seq);
     }
 };

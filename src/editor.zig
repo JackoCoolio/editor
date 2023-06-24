@@ -19,13 +19,11 @@ pub const Editor = struct {
     should_exit: bool = false,
     terminal: *Terminal,
 
-    pub fn init(alloc: Allocator, terminal: *Terminal) Editor {
+    pub fn init(alloc: Allocator, terminal: *Terminal) Allocator.Error!Editor {
         return .{
             .alloc = alloc,
             .buffers = std.ArrayList(Buffer).init(alloc),
-            .compositor = Compositor.init(alloc, .{
-                .x = 0,
-                .y = 0,
+            .compositor = try Compositor.init(alloc, .{
                 .width = terminal.getWidth(),
                 .height = terminal.getHeight(),
             }),
@@ -45,9 +43,11 @@ pub const Editor = struct {
 
         const window_ptr = try self.alloc.create(Window);
         window_ptr.* = Window{
+            .alloc = self.alloc,
             .buffer = buffer.id,
             .focused = true,
             .action_ctx = try ActionContext.init(self.alloc, keymaps, settings, .normal),
+            .grid = null,
         };
 
         const element = window_ptr.element();
@@ -60,9 +60,12 @@ pub const Editor = struct {
     }
 
     pub fn loop(self: *Editor, input_event_queue: *EventQueue(InputEvent)) Allocator.Error!void {
+        const render_ctx = .{
+            .editor = self,
+        };
         while (true) {
             while (input_event_queue.get()) |event| {
-                self.mode = try self.compositor.handle_input(event) orelse self.mode;
+                self.mode = try self.compositor.handle_input(event, self) orelse self.mode;
             }
 
             try self.compositor.check_timeouts();
@@ -70,8 +73,20 @@ pub const Editor = struct {
             if (self.should_exit) {
                 break;
             }
+
+            self.compositor.render(self.terminal, render_ctx) catch std.log.err("error encountered while rendering", .{});
         }
 
         // cleanup, save buffers, etc.
+    }
+
+    pub fn get_buffer(self: *const Editor, buffer_id: Buffer.Id) ?*Buffer {
+        for (self.buffers.items) |*buffer| {
+            if (buffer.id == buffer_id) {
+                return buffer;
+            }
+        }
+
+        return null;
     }
 };

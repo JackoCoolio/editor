@@ -4,6 +4,10 @@ const Allocator = std.mem.Allocator;
 // this is created by data/gen.py and is part of the build process
 const unicode = @import("unicode");
 
+const max_combining_characters = 3;
+/// A UTF-8 character with combining characters. Null terminated.
+pub const Grapheme = [(max_combining_characters + 1) * 4 + 1]u8;
+
 /// Determines the number of bytes that the given UTF-8 character requires.
 ///
 /// Defaults to 1 if invalid.
@@ -85,6 +89,74 @@ pub fn recognize(bytes: []const u8) []const u8 {
     return bytes[0..expected_len];
 }
 
+/// Recognizes a UTF-8 grapheme.
+/// Returns at least the first byte.
+pub fn recognize_grapheme(bytes: []const u8) []const u8 {
+    var len = recognize(bytes).len;
+    var rem = bytes[len..];
+    while (rem.len > 0) {
+        const comb = recognize(rem);
+        const cp = char_to_cp(comb);
+        if (is_combining_char(cp)) {
+            len += comb.len;
+            rem = rem[comb.len..];
+        } else {
+            break;
+        }
+    }
+
+    return bytes[0..len];
+}
+
+pub fn grapheme_from_bytes(bytes: []const u8) Grapheme {
+    var grapheme = std.mem.zeroes(Grapheme);
+    const size = @min(bytes.len, @sizeOf(Grapheme) - 1);
+    @memcpy(grapheme[0..size], bytes[0..size]);
+
+    // this shouldn't be necessary, but do it anyway
+    grapheme[@sizeOf(Grapheme) - 1] = 0;
+
+    return grapheme;
+}
+
+pub const Graphemes = struct {
+    rem: []const u8,
+
+    pub fn from(bytes: []const u8) Graphemes {
+        return .{
+            .rem = bytes,
+        };
+    }
+
+    pub fn next(self: *Graphemes) ?Grapheme {
+        if (self.rem.len == 0) {
+            return null;
+        }
+
+        const grapheme_s = recognize_grapheme(self.rem);
+        const graph = grapheme_from_bytes(grapheme_s);
+        self.rem = self.rem[grapheme_s.len..];
+
+        return graph;
+    }
+
+    pub fn into_bytes(self: *Graphemes, alloc: Allocator) Allocator.Error![]u8 {
+        var bytes = std.ArrayList(u8).init(alloc);
+        while (self.next()) |grapheme| {
+            try bytes.appendSlice(&grapheme);
+        }
+        return bytes.toOwnedSlice();
+    }
+
+    pub fn into_slice(self: *Graphemes, alloc: Allocator) Allocator.Error![]Grapheme {
+        var graphemes = std.ArrayList(Grapheme).init(alloc);
+        while (self.next()) |grapheme| {
+            try graphemes.append(grapheme);
+        }
+        return graphemes.toOwnedSlice();
+    }
+};
+
 test "recognize" {
     {
         const str = "Ḿ";
@@ -138,7 +210,7 @@ pub fn cp_to_char(buf: *[4]u8, cp: Codepoint) []u8 {
     // handle ascii case
     if (len == 1) {
         buf[0] = @truncate(u8, cp) & 0b01111111;
-        return buf;
+        return buf[0..1];
     }
 
     var i: usize = len;
@@ -205,6 +277,44 @@ fn search_entries(entries: []const unicode.Entry, key: Codepoint) ?Codepoint {
     return null;
 }
 
+inline fn is_combining_char(cp: Codepoint) bool {
+    return is_in_interval_table(&unicode.is_combining_char_table, cp);
+}
+
+test "is_combining_char" {
+    try std.testing.expect(is_combining_char(0x0300));
+    try std.testing.expect(is_combining_char(0x0367));
+    try std.testing.expect(is_combining_char(0x036F));
+    try std.testing.expect(is_combining_char(0x1E94A));
+}
+
+fn is_in_interval_table(table: []const unicode.Interval, key: Codepoint) bool {
+    var start: usize = 0;
+    var end: usize = table.len - 1;
+
+    if (key < table[0].first) {
+        return false;
+    }
+
+    if (key > table[table.len - 1].last) {
+        return false;
+    }
+
+    while (start <= end) {
+        const mid = (start + end) / 2;
+        const interval = table[mid];
+        if (key < interval.first) {
+            end = mid - 1;
+        } else if (key > interval.last) {
+            start = mid + 1;
+        } else {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 pub const Case = enum(u1) {
     lower,
     upper,
@@ -224,7 +334,7 @@ pub fn change_case(alloc: Allocator, s: []const u8, case: Case) Allocator.Error!
         const new_cp = switch (case) {
             .upper => cp_to_upper(cp),
             .lower => cp_to_lower(cp),
-        };
+        } orelse cp;
         var char_buf: [4]u8 = undefined;
         const new_char = cp_to_char(&char_buf, new_cp);
         try buf.appendSlice(new_char);
