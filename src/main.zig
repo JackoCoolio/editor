@@ -47,6 +47,18 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    const args = try std.process.argsAlloc(allocator);
+    if (args.len < 2) {
+        const stderr_file = std.io.getStdErr().writer();
+        var bw = std.io.bufferedWriter(stderr_file);
+        const stderr = bw.writer();
+        try stderr.print("usage: editor <filename>\n", .{});
+        try bw.flush();
+        return;
+    }
+
+    const filename: [:0]u8 = args[1];
+
     init_log.info("initializing terminal", .{});
     var terminal = try Terminal.init(allocator);
     defer terminal.deinit();
@@ -65,7 +77,7 @@ pub fn main() !void {
 
     init_log.info("creating editor and starting compositor", .{});
     var editor = try Editor.init(allocator, &terminal);
-    try editor.open_file("/home/jtwam/dev/editor-zig/README.md", true);
+    try editor.open_file(filename, true);
 
     var exit_message = FixedStringBuffer(1024).init();
 

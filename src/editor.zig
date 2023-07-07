@@ -8,8 +8,8 @@ const ActionContext = keymap.ActionContext;
 const Terminal = @import("terminal.zig").Terminal;
 const EventQueue = @import("event_queue.zig").EventQueue;
 const Buffer = @import("Buffer.zig");
-const Compositor = @import("compositor.zig").Compositor;
-const Window = @import("compositor.zig").Window;
+const Compositor = @import("ui/compositor.zig").Compositor;
+const Window = @import("ui/compositor.zig").Window;
 
 pub const Editor = struct {
     alloc: Allocator,
