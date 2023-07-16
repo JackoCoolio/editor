@@ -51,25 +51,25 @@ fn key_event_to_bytes(key: Key) [7]u8 {
             // tag
             0,
             // value
-            @truncate(u8, cp >> 16),
-            @truncate(u8, cp >> 8),
-            @truncate(u8, cp),
+            @truncate(cp >> 16),
+            @truncate(cp >> 8),
+            @truncate(cp),
             // modifiers
-            @boolToInt(key.modifiers.shift),
-            @boolToInt(key.modifiers.control),
-            @boolToInt(key.modifiers.alt),
+            @intFromBool(key.modifiers.shift),
+            @intFromBool(key.modifiers.control),
+            @intFromBool(key.modifiers.alt),
         },
         .symbol => |sym| [_]u8{
             // tag
             1,
             // value
-            @enumToInt(sym),
+            @intFromEnum(sym),
             0,
             0,
             // modifiers
-            @boolToInt(key.modifiers.shift),
-            @boolToInt(key.modifiers.control),
-            @boolToInt(key.modifiers.alt),
+            @intFromBool(key.modifiers.shift),
+            @intFromBool(key.modifiers.control),
+            @intFromBool(key.modifiers.alt),
         },
     };
 }

@@ -2,7 +2,7 @@ const Grid = @This();
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const Grapheme = @import("utf8.zig").Grapheme;
+const Grapheme = @import("../utf8.zig").Grapheme;
 
 alloc: Allocator,
 width: usize,
@@ -47,22 +47,22 @@ pub fn get_row_bytes(self: *Grid, row_idx: usize) []u8 {
 // FIXME: this doesn't work if the grids are same size and x>0 and y>0
 pub fn compose(noalias self: *Grid, noalias overlay: *const Grid, x: i32, y: i32) void {
     // shortcut if the grids don't overlap
-    if (x >= @intCast(i32, self.width) or y >= @intCast(i32, self.height) or x + @intCast(i32, overlay.width) < 0 or y + @intCast(i32, overlay.height) < 0) {
+    if (x >= @as(i32, @intCast(self.width)) or y >= @as(i32, @intCast(self.height)) or x + @as(i32, @intCast(overlay.width)) < 0 or y + @as(i32, @intCast(overlay.height)) < 0) {
         return;
     }
 
     // if x == -5, the first col we read from `overlay` is col 5
     // if x == 5, the first col we read is col 0
-    const ol_col_offset: usize = @intCast(usize, @max(-x, 0));
-    const dst_col_offset: usize = @intCast(usize, @max(x, 0));
+    const ol_col_offset: usize = @intCast(@max(-x, 0));
+    const dst_col_offset: usize = @intCast(@max(x, 0));
     const ol_width: usize = overlay.width - ol_col_offset;
     // same reasoning as above
-    const ol_row_offset: usize = @intCast(usize, @max(-y, 0));
+    const ol_row_offset: usize = @intCast(@max(-y, 0));
     const ol_height: usize = overlay.height - ol_row_offset;
 
     // iterate over rows
     for (ol_row_offset..ol_row_offset + ol_height) |src_row_idx| {
-        const dst_row_idx = @intCast(usize, y + @intCast(i32, src_row_idx));
+        const dst_row_idx: usize = @intCast(y + @as(i32, @intCast(src_row_idx)));
         const dst_row = self.get_row(dst_row_idx)[dst_col_offset .. dst_col_offset + ol_width];
         const src_row = overlay.get_row(src_row_idx)[ol_col_offset .. ol_col_offset + ol_width];
         @memcpy(dst_row, src_row);

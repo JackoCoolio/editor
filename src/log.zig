@@ -41,7 +41,7 @@ pub fn log_fn(comptime message_level: std.log.Level, comptime scope: @TypeOf(.En
     const log_file = get_log_file() orelse std.debug.panic("no log file", .{});
 
     // keep track of highest log severity to inform user to check logs if needed
-    highest_log_severity = std.math.max(highest_log_severity, level_to_severity(message_level));
+    highest_log_severity = @max(highest_log_severity, level_to_severity(message_level));
 
     const scope_str = @tagName(scope);
 

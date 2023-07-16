@@ -148,7 +148,7 @@ pub const Terminal = struct {
         // standard library and I'd rather not link against libc if I don't have
         // to
         const TIOCGWINSZ: u16 = 0x5413;
-        if (std.os.linux.ioctl(self.tty, TIOCGWINSZ, @ptrToInt(&winsize)) < 0 or winsize.ws_col == 0) {
+        if (std.os.linux.ioctl(self.tty, TIOCGWINSZ, @intFromPtr(&winsize)) < 0 or winsize.ws_col == 0) {
             return FetchTermDimensionsError.IoctlError;
         }
         self.winsize = winsize;

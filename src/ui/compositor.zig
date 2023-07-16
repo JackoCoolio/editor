@@ -209,7 +209,7 @@ pub const Compositor = struct {
         }
 
         if (try self.get_cursor_pos(ctx)) |pos| {
-            try terminal.exec_with_args(self.alloc, .cursor_address, &[_]Parameter{ .{ .integer = @intCast(i32, pos.row) }, .{ .integer = @intCast(i32, pos.col) } });
+            try terminal.exec_with_args(self.alloc, .cursor_address, &[_]Parameter{ .{ .integer = @intCast(pos.row) }, .{ .integer = @intCast(pos.col) } });
             try terminal.exec(.cursor_visible);
         }
     }
@@ -261,17 +261,17 @@ pub const Window = struct {
                 self.cursor_pos.row -|= n;
             },
             .down => {
-                self.cursor_pos.row = @min(self.cursor_pos.row +| n, @intCast(u32, buffer_u.lines.len - 1));
+                self.cursor_pos.row = @min(self.cursor_pos.row +| n, @as(u32, @intCast(buffer_u.lines.len - 1)));
             },
         }
         const line_len = buffer_u.lines[self.cursor_pos.row].len;
-        self.cursor_pos.col = @min(self.desired_col, @intCast(u32, line_len));
+        self.cursor_pos.col = @min(self.desired_col, @as(u32, @intCast(line_len)));
     }
 
     fn handle_action(dyn: *anyopaque, contextual_action: ContextualAction, editor: *Editor) anyerror!void {
         const log = std.log.scoped(.window_handle_action);
 
-        const self = @ptrCast(*Window, @alignCast(@alignOf(Window), dyn));
+        const self: *Window = @ptrCast(@alignCast(dyn));
 
         var buffer = editor.get_buffer(self.buffer);
 
@@ -320,13 +320,13 @@ pub const Window = struct {
                 log.info("changing mode to {s}", .{@tagName(new_mode)});
             },
             .insert_bytes => |bytes| {
-                log.info("inserting character '{s}'", .{@import("utf8.zig").recognize(&bytes)});
+                log.info("inserting character '{s}'", .{utf8.recognize(&bytes)});
             },
         }
     }
 
     fn handle_event(dyn: *anyopaque, event: Compositor.Event, _: *EventContext) anyerror!Compositor.Event.Response {
-        const self = @ptrCast(*Window, @alignCast(@alignOf(Window), dyn));
+        const self: *Window = @ptrCast(@alignCast(dyn));
 
         switch (event) {
             .focus_gained => self.focused = true,
@@ -344,7 +344,7 @@ pub const Window = struct {
     }
 
     fn should_render(dyn: *anyopaque, ctx: Compositor.RenderContext) !bool {
-        const self = @ptrCast(*Window, @alignCast(@alignOf(Window), dyn));
+        const self: *Window = @ptrCast(@alignCast(dyn));
         const buffer = ctx.editor.get_buffer(self.buffer) orelse return false;
 
         return buffer.dirty;
@@ -352,7 +352,7 @@ pub const Window = struct {
 
     fn get_cursor_pos(dyn: *anyopaque, ctx: Compositor.RenderContext) !?Position {
         _ = ctx;
-        const self = @ptrCast(*Window, @alignCast(@alignOf(Window), dyn));
+        const self: *Window = @ptrCast(@alignCast(dyn));
 
         return .{
             .row = self.cursor_pos.row,
@@ -361,7 +361,7 @@ pub const Window = struct {
     }
 
     fn render(dyn: *anyopaque, ctx: Compositor.RenderContext) !?*const Grid {
-        const self = @ptrCast(*Window, @alignCast(@alignOf(Window), dyn));
+        const self: *Window = @ptrCast(@alignCast(dyn));
         const grid = if (self.grid) |*grid| grid else return null;
 
         const buffer = ctx.editor.get_buffer(self.buffer) orelse return null;

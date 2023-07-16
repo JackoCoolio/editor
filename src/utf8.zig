@@ -209,7 +209,7 @@ pub fn cp_to_char(buf: *[4]u8, cp: Codepoint) []u8 {
 
     // handle ascii case
     if (len == 1) {
-        buf[0] = @truncate(u8, cp) & 0b01111111;
+        buf[0] = @as(u8, @truncate(cp)) & 0b01111111;
         return buf[0..1];
     }
 
@@ -218,16 +218,16 @@ pub fn cp_to_char(buf: *[4]u8, cp: Codepoint) []u8 {
     while (i > 1) { // don't do first byte yet, because it depends on the length
         i -= 1;
 
-        buf[i] = 0b1000_0000 | (@truncate(u8, cp_shifted) & 0b0011_1111);
+        buf[i] = 0b1000_0000 | (@as(u8, @truncate(cp_shifted)) & 0b0011_1111);
         cp_shifted >>= 6;
     }
 
     // do the first byte now
     // we don't need to handle len==1, we return early in that case
     buf[0] = switch (len) {
-        2 => 0b110_00000 | (@truncate(u8, cp_shifted) & 0b000_11111),
-        3 => 0b1110_0000 | (@truncate(u8, cp_shifted) & 0b0000_1111),
-        4 => 0b11110_000 | (@truncate(u8, cp_shifted) & 0b00000_111),
+        2 => 0b110_00000 | (@as(u8, @truncate(cp_shifted)) & 0b000_11111),
+        3 => 0b1110_0000 | (@as(u8, @truncate(cp_shifted)) & 0b0000_1111),
+        4 => 0b11110_000 | (@as(u8, @truncate(cp_shifted)) & 0b00000_111),
         else => unreachable,
     };
 
@@ -364,7 +364,7 @@ test "change_case.upper" {
 const MAX_ASCII = 127;
 pub fn cp_to_upper(cp: Codepoint) ?Codepoint {
     if (cp <= MAX_ASCII) {
-        const upper = @as(Codepoint, std.ascii.toUpper(@truncate(u8, cp)));
+        const upper = @as(Codepoint, std.ascii.toUpper(@truncate(cp)));
         return if (cp == upper) null else upper;
     }
 
@@ -373,7 +373,7 @@ pub fn cp_to_upper(cp: Codepoint) ?Codepoint {
 
 pub fn cp_to_lower(cp: Codepoint) ?Codepoint {
     if (cp <= MAX_ASCII) {
-        const lower = @as(Codepoint, std.ascii.toLower(@truncate(u8, cp)));
+        const lower = @as(Codepoint, std.ascii.toLower(@truncate(cp)));
         return if (cp == lower) null else lower;
     }
 

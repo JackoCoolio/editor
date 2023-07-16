@@ -73,10 +73,10 @@ def usage():
     print("usage: gen.py <data directory> <generated file path>")
 
 
-def main(args: list[str]):
+def main(args: list[str]) -> int:
     if len(args) < 3 or args[1] in ["-h", "--help"]:
         usage()
-        return
+        return 1
 
     data_dir = args[1]
     out_file_path = args[2]
@@ -120,7 +120,8 @@ def main(args: list[str]):
         file.write(generate_convert_table("upper", unicode_data, get_from=get_codepoint_fn("codepoint"), get_to=get_codepoint_fn("uppercase_mapping")))
         file.write(generate_interval_table("combining_char", unicode_data, get_key=lambda entry: get_codepoint_fn("codepoint")(entry) if entry["general_category"] in ["Mc", "Mn", "Me"] else None))
 
+    return 0
 
 if __name__ == "__main__":
     import sys
-    main(sys.argv)
+    sys.exit(main(sys.argv))
