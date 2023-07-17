@@ -86,16 +86,12 @@ pub fn build(b: *std.Build) !void {
         },
     });
 
-    const fetch_unicode_data = b.addSystemCommand(&[_][]const u8{ "./data/update.py", "data/" });
-
-    const gen = b.addSystemCommand(&[_][]const u8{ "./data/gen.py", "data/", unicode_generated_file });
+    const gen = b.addSystemCommand(&[_][]const u8{ "python3", "data/gen.py", "data/", unicode_generated_file });
     const unicode_data_module = b.createModule(std.build.CreateModuleOptions{
         .source_file = std.build.FileSource{
             .path = unicode_generated_file,
         },
     });
-
-    gen.step.dependOn(&fetch_unicode_data.step);
 
     const exe = b.addExecutable(.{
         .name = "editor",
