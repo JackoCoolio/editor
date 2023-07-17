@@ -35,11 +35,12 @@
           src = self;
           dontConfigure = true;
           buildPhase = ''
-            echo $PWD
-            zig build
+            CACHE_DIR=$(mktemp -d)
+            mkdir -p $out
+            zig build install --global-cache-dir $CACHE_DIR -p $out
+            rm -rf $CACHE_DIR
           '';
           dontInstall = true;
-          # installPhase = "mkdir -p $out/bin; install -t $out/bin zig-out/bin/editor";
           buildInputs = deps.build;
         };
 
