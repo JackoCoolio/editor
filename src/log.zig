@@ -15,7 +15,7 @@ pub fn level_to_severity(level: std.log.Level) u2 {
 
 /// Opens a temporary log file.
 fn open_tmp_file() ?std.fs.File {
-    return std.fs.cwd().openFile("editor.log") catch null;
+    return std.fs.cwd().openFile("editor.log", std.fs.File.OpenFlags{ .mode = .read_write }) catch null;
 }
 
 /// Gets or opens the log file.
@@ -27,7 +27,7 @@ fn get_log_file() ?std.fs.File {
 }
 
 /// Opens the log file for reading and writing.
-fn open_log_file() ?std.fs.File {
+fn open_cache_log_file() ?std.fs.File {
     var dir: std.fs.Dir = config.get_config_dir() orelse return null;
     defer std.os.close(dir.fd);
 
@@ -35,6 +35,20 @@ fn open_log_file() ?std.fs.File {
         .read = true,
         .truncate = true,
     }) catch null;
+}
+
+fn open_log_file() ?std.fs.File {
+    // try .cache file
+    if (open_cache_log_file()) |file| {
+        return file;
+    }
+
+    // try cwd tmp file
+    if (open_tmp_file()) |file| {
+        return file;
+    }
+
+    return null;
 }
 
 pub fn log_fn(comptime message_level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral), comptime format: []const u8, args: anytype) void {
@@ -52,7 +66,7 @@ pub fn log_fn(comptime message_level: std.log.Level, comptime scope: @TypeOf(.En
     const log_buf_s = std.fmt.bufPrint(&log_buf, "{s}:\t({s}): {s}\n", .{ message_level.asText(), scope_str, msg_buf }) catch unreachable;
 
     const writer = log_file.writer();
-    _ = writer.write(log_buf_s) catch unreachable;
+    _ = writer.write(log_buf_s) catch {};
 }
 
 pub fn close_log_file() void {
