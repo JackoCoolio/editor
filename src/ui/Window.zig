@@ -190,7 +190,7 @@ fn render(dyn: *anyopaque, ctx: Compositor.RenderContext) !?*const Grid {
     const buffer = ctx.editor.get_buffer(self.buffer) orelse return null;
 
     std.log.info("lines[{}..{}] (len {})", .{ self.scroll_offset, self.scroll_offset + grid.height, buffer.lines.len });
-    var lines = buffer.lines[self.scroll_offset .. self.scroll_offset + grid.height];
+    var lines = buffer.lines[self.scroll_offset..@min(self.scroll_offset + grid.height, buffer.lines.len)];
 
     for (lines, 0..) |line, line_num| {
         var graphemes = Graphemes.from(line);
