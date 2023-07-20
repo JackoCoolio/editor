@@ -45,10 +45,6 @@ pub fn element(self: *Window) Element {
     };
 }
 
-fn get_max_cursor_pos(buffer: *const Buffer) u32 {
-    return @as(u32, @intCast(buffer.lines.len)) -| 1;
-}
-
 const Direction = enum { up, down, left, right };
 fn move_cursor(self: *Window, buffer: ?*Buffer, comptime dir: Direction, n: u32) void {
     const buffer_u = buffer orelse return;
@@ -64,7 +60,8 @@ fn move_cursor(self: *Window, buffer: ?*Buffer, comptime dir: Direction, n: u32)
         },
         .down => {
             // ensure that cursor pos doesn't exceed buffer length
-            self.cursor_pos.row = @min(self.cursor_pos.row +| n, get_max_cursor_pos(buffer_u));
+            const max_cursor_pos: u32 = @intCast(buffer.lines.len -| 1);
+            self.cursor_pos.row = @min(self.cursor_pos.row +| n, max_cursor_pos);
         },
     }
 
