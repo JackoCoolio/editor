@@ -73,13 +73,12 @@ fn move_cursor(self: *Window, buffer: ?*Buffer, comptime dir: Direction, n: u32)
 
     var grid = &(self.grid orelse return);
     if (self.cursor_pos.row < self.scroll_offset) {
-        // screen needs to scroll down
-        self.set_scroll(self.cursor_pos.row);
-    } else if (self.cursor_pos.row > self.scroll_offset + grid.height) {
         // screen needs to scroll up
-        self.set_scroll(self.cursor_pos.row - @as(u32, @intCast(grid.height)));
+        self.set_scroll(self.cursor_pos.row);
+    } else if (self.cursor_pos.row >= self.scroll_offset + grid.height) {
+        // screen needs to scroll down
+        self.set_scroll(self.cursor_pos.row - @as(u32, @intCast(grid.height)) + 1);
     }
-    std.log.info("scroll_offset = {}", .{self.scroll_offset});
 }
 
 fn set_scroll(self: *Window, scroll: u32) void {
@@ -186,6 +185,15 @@ fn get_cursor_pos(dyn: *anyopaque, ctx: Compositor.RenderContext) !?Position {
         .row = self.cursor_pos.row - self.scroll_offset,
         .col = self.cursor_pos.col,
     };
+}
+
+fn get_grid(self: *const Window) ?*const Grid {
+    return &(self.grid orelse return null);
+}
+
+fn get_visible_lines(self: *const Window, buffer: *const Buffer) [][]const u8 {
+    const grid = &(self.grid orelse return null);
+    return buffer.lines[self.scroll_offset..@min(self.scroll_offset + grid.height, buffer.lines.len)];
 }
 
 fn render(dyn: *anyopaque, ctx: Compositor.RenderContext) !?*const Grid {
