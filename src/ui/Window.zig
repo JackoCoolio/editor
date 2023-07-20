@@ -21,10 +21,7 @@ buffer: Buffer.Id,
 scroll_offset: u32 = 0,
 scroll_changed: bool = false,
 focused: bool,
-cursor_pos: struct {
-    row: u32,
-    col: u32,
-} = .{ .row = 0, .col = 0 },
+cursor_pos: Position = .{ .row = 0, .col = 0 },
 desired_col: u32 = 0,
 action_ctx: ActionContext,
 grid: ?Grid,
@@ -60,7 +57,7 @@ fn move_cursor(self: *Window, buffer: ?*Buffer, comptime dir: Direction, n: u32)
         },
         .down => {
             // ensure that cursor pos doesn't exceed buffer length
-            const max_cursor_pos: u32 = @intCast(buffer.lines.len -| 1);
+            const max_cursor_pos: u32 = @intCast(buffer_u.lines.len -| 1);
             self.cursor_pos.row = @min(self.cursor_pos.row +| n, max_cursor_pos);
         },
     }
@@ -76,6 +73,9 @@ fn move_cursor(self: *Window, buffer: ?*Buffer, comptime dir: Direction, n: u32)
         // screen needs to scroll down
         self.set_scroll(self.cursor_pos.row - @as(u32, @intCast(grid.height)) + 1);
     }
+
+    std.log.info("cursor pos = {}:{}", .{ self.cursor_pos.row + 1, self.cursor_pos.col + 1 });
+    std.log.info("byte offset = {}", .{buffer_u.get_byte_offset_from_position(self.cursor_pos)});
 }
 
 fn set_scroll(self: *Window, scroll: u32) void {
@@ -139,9 +139,20 @@ fn handle_action(dyn: *anyopaque, contextual_action: ContextualAction, editor: *
             log.info("changing mode to {s}", .{@tagName(new_mode)});
         },
         .insert_bytes => |bytes| {
-            log.info("inserting character '{s}'", .{utf8.recognize(&bytes)});
+            if (buffer) |buffer_u| {
+                log.info("inserting character '{s}'", .{utf8.recognize(&bytes)});
+                try buffer_u.insert_bytes_at_position(self._get_cursor_pos(), &bytes);
+                self.move_cursor(buffer, .right, 1);
+            }
         },
     }
+}
+
+fn _get_cursor_pos(self: *const Window) Position {
+    return .{
+        .row = self.cursor_pos.row - self.scroll_offset,
+        .col = self.cursor_pos.col,
+    };
 }
 
 fn handle_event(dyn: *anyopaque, event: Compositor.Event, _: *EventContext) anyerror!Compositor.Event.Response {
@@ -177,11 +188,7 @@ fn should_render(dyn: *anyopaque, ctx: Compositor.RenderContext) !bool {
 fn get_cursor_pos(dyn: *anyopaque, ctx: Compositor.RenderContext) !?Position {
     _ = ctx;
     const self: *Window = @ptrCast(@alignCast(dyn));
-
-    return .{
-        .row = self.cursor_pos.row - self.scroll_offset,
-        .col = self.cursor_pos.col,
-    };
+    return self._get_cursor_pos();
 }
 
 fn get_grid(self: *const Window) ?*const Grid {
