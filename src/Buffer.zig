@@ -46,7 +46,10 @@ fn update_lines(self: *Buffer) Allocator.Error!void {
         len += 1;
         rem = rem[1..];
     }
-    try lines.append(line);
+    // append any remaining bytes
+    if (line.len != 0) {
+        try lines.append(line);
+    }
     self.lines = try lines.toOwnedSlice();
 }
 
