@@ -11,7 +11,7 @@ const Grid = @import("Grid.zig");
 const Compositor = @import("compositor.zig").Compositor;
 const Element = @import("compositor.zig").Element;
 const EventContext = @import("compositor.zig").EventContext;
-const Position = @import("compositor.zig").Position;
+const Position = @import("../Position.zig");
 const Editor = @import("../editor.zig").Editor;
 const utf8 = @import("../utf8.zig");
 const Graphemes = utf8.Graphemes;
@@ -47,6 +47,8 @@ pub fn element(self: *Window) Element {
 
 const Direction = enum { up, down, left, right };
 fn move_cursor(self: *Window, buffer: ?*Buffer, comptime dir: Direction, n: u32) void {
+    const scope = std.log.scoped(.move_cursor);
+
     const buffer_u = buffer orelse return;
     switch (dir) {
         .left => {
@@ -60,12 +62,12 @@ fn move_cursor(self: *Window, buffer: ?*Buffer, comptime dir: Direction, n: u32)
         },
         .down => {
             // ensure that cursor pos doesn't exceed buffer length
-            const max_cursor_pos: u32 = @intCast(buffer_u.lines.len -| 1);
+            const max_cursor_pos: u32 = @intCast(buffer_u.data.get_line_count() -| 1);
             self.cursor_pos.row = @min(self.cursor_pos.row +| n, max_cursor_pos);
         },
     }
 
-    const line_len = buffer_u.lines[self.cursor_pos.row].len;
+    const line_len = buffer_u.data.get_line_length(self.cursor_pos.row) orelse unreachable;
     self.cursor_pos.col = @min(self.desired_col, @as(u32, @intCast(line_len)));
 
     var grid = &(self.grid orelse return);
@@ -76,6 +78,8 @@ fn move_cursor(self: *Window, buffer: ?*Buffer, comptime dir: Direction, n: u32)
         // screen needs to scroll down
         self.set_scroll(self.cursor_pos.row - @as(u32, @intCast(grid.height)) + 1);
     }
+
+    scope.info("current cursor location: ({}, {}), desired col: {}, scroll: {}", .{ self.cursor_pos.row, self.cursor_pos.col, self.desired_col, self.scroll_offset });
 }
 
 fn set_scroll(self: *Window, scroll: u32) void {
@@ -140,7 +144,12 @@ fn handle_action(dyn: *anyopaque, contextual_action: ContextualAction, editor: *
         },
         .insert_bytes => |bytes| {
             if (buffer) |buffer_u| {
-                try buffer_u.insert_bytes_at_position(self._get_cursor_pos(), &bytes);
+                const cursor_pos = self._get_cursor_pos();
+
+                std.log.info("inserting at ({}, {})", .{ cursor_pos.row, cursor_pos.col });
+                try buffer_u.data.dump_with_depth(0);
+
+                try buffer_u.insert_bytes_at_position(cursor_pos, &bytes);
                 self.move_cursor(buffer, .right, 1);
             }
         },
@@ -206,14 +215,26 @@ fn render(dyn: *anyopaque, ctx: Compositor.RenderContext) !?*const Grid {
 
     const buffer = ctx.editor.get_buffer(self.buffer) orelse return null;
 
-    std.log.info("lines[{}..{}] (len {})", .{ self.scroll_offset, self.scroll_offset + grid.height, buffer.lines.len });
-    var lines = buffer.lines[self.scroll_offset..@min(self.scroll_offset + grid.height, buffer.lines.len)];
+    std.log.info("lines[{}..{}] (len {})", .{ self.scroll_offset, self.scroll_offset + grid.height, buffer.data.get_line_count() });
+    var lines = try buffer.data.lines(self.alloc);
+    defer lines.deinit();
 
-    for (lines, 0..) |line, line_num| {
+    // TODO: make this more efficient
+    // you should be able to start LineIter at line i, instead of just skipping
+    // i lines
+    for (0..self.scroll_offset) |_| {
+        self.alloc.free(try lines.next() orelse break);
+    }
+
+    for (self.scroll_offset..@min(self.scroll_offset + grid.height, buffer.data.get_line_count())) |line_num| {
+        // the parentheses probably aren't necessary here, but i think it makes
+        // more sense with them
+        const line = (try lines.next()) orelse break;
+        defer self.alloc.free(line);
+
         var graphemes = Graphemes.from(line);
         const slice = try graphemes.into_slice(self.alloc);
-        // FIXME: this slice will overflow if line is too long
-        grid.set_row_clear_after(line_num, slice);
+        grid.set_row_clear_after(line_num - self.scroll_offset, slice);
     }
 
     return grid;

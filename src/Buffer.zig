@@ -1,11 +1,11 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const Position = @import("ui/compositor.zig").Position;
+const Position = @import("Position.zig");
+const Rope = @import("rope.zig").Rope;
 const Buffer = @This();
 
 alloc: std.mem.Allocator,
-data: []u8,
-lines: [][]const u8,
+data: *Rope,
 save_location: ?[]const u8,
 id: Id,
 dirty: bool,
@@ -13,7 +13,6 @@ dirty: bool,
 pub const Id = u32;
 
 var next_id: Id = 0;
-
 fn get_id() Id {
     defer next_id += 1;
     return next_id;
@@ -21,14 +20,11 @@ fn get_id() Id {
 
 fn on_change(self: *Buffer) Allocator.Error!void {
     self.dirty = true;
-    try self.update_lines();
 }
 
 pub fn get_byte_offset_from_position(self: *const Buffer, position: Position) usize {
-    const start = @intFromPtr(self.data.ptr);
-    const line = self.lines[position.row];
-    const addr = @intFromPtr(line.ptr) + @as(usize, position.col);
-    return addr - start;
+    @compileLog("deprecated");
+    return self.data.get_index_from_cursor_pos(position);
 }
 
 pub fn insert_byte_at_offset(self: *Buffer, offset: usize, byte: u8) Allocator.Error!void {
@@ -50,43 +46,13 @@ pub fn insert_byte_at_position(self: *Buffer, position: Position, byte: u8) Allo
 }
 
 pub fn insert_bytes_at_position(self: *Buffer, position: Position, bytes: []const u8) Allocator.Error!void {
-    var offset = self.get_byte_offset_from_position(position);
-    std.log.info("offset: {}", .{offset});
-    for (bytes) |byte| {
-        try self.insert_byte_at_offset(offset, byte);
-        offset += 1;
-    }
-}
+    const scope = std.log.scoped(.insert_bytes_at_position);
+    scope.info("position: ({}, {})", .{ position.row, position.col });
 
-fn update_lines(self: *Buffer) Allocator.Error!void {
-    self.alloc.free(self.lines);
-    var lines = std.ArrayList([]const u8).init(self.alloc);
-    var line = self.data;
-    var rem = self.data;
-    var len: usize = 0;
-    var skipped_crs: usize = 0;
-    while (rem.len > 0) {
-        if (rem[0] == '\n') {
-            try lines.append(line[0 .. len - skipped_crs]);
-            rem = rem[1..];
-            line = rem;
-            len = 0;
-            skipped_crs = 0;
-            continue;
-        } else if (rem[0] == '\r') {
-            skipped_crs += 1;
-        } else {
-            skipped_crs = 0;
-        }
+    const index = self.data.get_index_from_cursor_pos(position) orelse unreachable;
+    self.data = try self.data.insert(index, bytes);
 
-        len += 1;
-        rem = rem[1..];
-    }
-    // append any remaining bytes
-    if (line.len != 0) {
-        try lines.append(line);
-    }
-    self.lines = try lines.toOwnedSlice();
+    try self.on_change();
 }
 
 pub const SaveError = std.fs.File.OpenError || std.fs.File.WriteError;
@@ -113,7 +79,13 @@ pub fn save_to(self: *const Buffer, save_location: []const u8) SaveError!usize {
         file.close();
     }
 
-    return try file.write(self.data);
+    var bytes_written = 0;
+    var chunks_iter = try self.data.chunks();
+    while (try chunks_iter.next()) |chunk| {
+        bytes_written += try file.write(chunk);
+    }
+
+    return bytes_written;
 }
 
 pub const InitFromFileError = std.fs.File.OpenError || Allocator.Error;
@@ -134,9 +106,8 @@ pub fn init_from_file(alloc: Allocator, file_path: []const u8, read_only: bool) 
 pub fn init_from_data(alloc: Allocator, data: []u8, save_location: ?[]const u8) Allocator.Error!Buffer {
     var buffer: Buffer = .{
         .alloc = alloc,
-        .data = data,
+        .data = try Rope.init(alloc, data),
         .save_location = save_location,
-        .lines = try alloc.alloc([]const u8, 0),
         .id = get_id(),
         .dirty = false,
     };

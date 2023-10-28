@@ -13,15 +13,11 @@ const Grid = @import("Grid.zig");
 const utf8 = @import("../utf8.zig");
 const Graphemes = utf8.Graphemes;
 const Parameter = @import("terminfo").Strings.Parameter;
+const Position = @import("../Position.zig");
 
 pub const Dimensions = struct {
     width: u32,
     height: u32,
-};
-
-pub const Position = struct {
-    row: u32,
-    col: u32,
 };
 
 pub const Compositor = struct {
