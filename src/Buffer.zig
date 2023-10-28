@@ -1,5 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const Position = @import("ui/compositor.zig").Position;
 const Buffer = @This();
 
 alloc: std.mem.Allocator,
@@ -19,7 +20,42 @@ fn get_id() Id {
 }
 
 fn on_change(self: *Buffer) Allocator.Error!void {
+    self.dirty = true;
     try self.update_lines();
+}
+
+pub fn get_byte_offset_from_position(self: *const Buffer, position: Position) usize {
+    const start = @intFromPtr(self.data.ptr);
+    const line = self.lines[position.row];
+    const addr = @intFromPtr(line.ptr) + @as(usize, position.col);
+    return addr - start;
+}
+
+pub fn insert_byte_at_offset(self: *Buffer, offset: usize, byte: u8) Allocator.Error!void {
+    var data = std.ArrayList(u8).fromOwnedSlice(self.alloc, self.data);
+
+    try data.insert(offset, byte);
+
+    self.data = try data.toOwnedSlice();
+
+    // TODO: optimize this. we don't need to recalculate line offsets if the byte
+    // wasn't a newline. we also don't need to recalculate all of them, only split
+    // the current line and increment the offsets of the following lines
+    try self.on_change();
+}
+
+pub fn insert_byte_at_position(self: *Buffer, position: Position, byte: u8) Allocator.Error!void {
+    const offset = self.get_byte_offset_from_position(position);
+    try self.insert_byte_at_offset(offset, byte);
+}
+
+pub fn insert_bytes_at_position(self: *Buffer, position: Position, bytes: []const u8) Allocator.Error!void {
+    var offset = self.get_byte_offset_from_position(position);
+    std.log.info("offset: {}", .{offset});
+    for (bytes) |byte| {
+        try self.insert_byte_at_offset(offset, byte);
+        offset += 1;
+    }
 }
 
 fn update_lines(self: *Buffer) Allocator.Error!void {

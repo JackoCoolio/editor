@@ -60,7 +60,7 @@ fn move_cursor(self: *Window, buffer: ?*Buffer, comptime dir: Direction, n: u32)
         },
         .down => {
             // ensure that cursor pos doesn't exceed buffer length
-            const max_cursor_pos: u32 = @intCast(buffer.lines.len -| 1);
+            const max_cursor_pos: u32 = @intCast(buffer_u.lines.len -| 1);
             self.cursor_pos.row = @min(self.cursor_pos.row +| n, max_cursor_pos);
         },
     }
@@ -139,7 +139,10 @@ fn handle_action(dyn: *anyopaque, contextual_action: ContextualAction, editor: *
             log.info("changing mode to {s}", .{@tagName(new_mode)});
         },
         .insert_bytes => |bytes| {
-            log.info("inserting character '{s}'", .{utf8.recognize(&bytes)});
+            if (buffer) |buffer_u| {
+                try buffer_u.insert_bytes_at_position(self._get_cursor_pos(), &bytes);
+                self.move_cursor(buffer, .right, 1);
+            }
         },
     }
 }
@@ -174,14 +177,18 @@ fn should_render(dyn: *anyopaque, ctx: Compositor.RenderContext) !bool {
     return should;
 }
 
-fn get_cursor_pos(dyn: *anyopaque, ctx: Compositor.RenderContext) !?Position {
-    _ = ctx;
-    const self: *Window = @ptrCast(@alignCast(dyn));
-
+fn _get_cursor_pos(self: *const Window) Position {
     return .{
         .row = self.cursor_pos.row - self.scroll_offset,
         .col = self.cursor_pos.col,
     };
+}
+
+fn get_cursor_pos(dyn: *anyopaque, ctx: Compositor.RenderContext) !?Position {
+    _ = ctx;
+    const self: *Window = @ptrCast(@alignCast(dyn));
+
+    return self._get_cursor_pos();
 }
 
 fn get_grid(self: *const Window) ?*const Grid {
