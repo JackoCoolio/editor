@@ -23,7 +23,7 @@
           build =
             [ zig-bin ] ++
             (with pkgs.python311Packages; [ python requests ]);
-          dev = deps.build ++ [ zls.packages.${system}.default ];
+          dev = deps.build ++ [ zls.packages.${system}.default pkgs.gdb ];
         };
       in {
         packages.editor = pkgs.stdenvNoCC.mkDerivation {
