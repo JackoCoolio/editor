@@ -65,6 +65,10 @@ fn getTerminfoDirs(allocator: std.mem.Allocator) []const u8 {
 
 const unicode_generated_file = "data/unicode.generated.zig";
 
+fn file_exists(path: []const u8) bool {
+    return if (std.fs.cwd().access(path, .{})) true else |_| false;
+}
+
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
@@ -80,9 +84,11 @@ pub fn build(b: *std.Build) !void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    const terminfo_main_path = "lib/terminfo/src/main.zig";
+    std.debug.assert(file_exists(terminfo_main_path));
     const terminfo_module = b.createModule(std.build.CreateModuleOptions{
         .source_file = std.build.FileSource{
-            .path = "lib/terminfo/src/main.zig",
+            .path = terminfo_main_path,
         },
     });
 
