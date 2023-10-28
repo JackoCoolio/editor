@@ -13,19 +13,15 @@
     zig,
     zls
   } @ inputs: let
-    overlays = [
-      (final: prev: {
-        zigpkgs = inputs.zig.packages.${prev.system};
-      })
-    ];
     systems = builtins.attrNames inputs.zig.packages;
   in
     flake-utils.lib.eachSystem systems (system:
       let
-        pkgs = import nixpkgs { inherit overlays system; };
+        zig-bin = zig.packages.${system}.master;
+        pkgs = import nixpkgs { inherit system; };
         deps = {
           build =
-            (with pkgs; [ zigpkgs.master ]) ++
+            [ zig-bin ] ++
             (with pkgs.python311Packages; [ python requests ]);
           dev = deps.build ++ [ zls.packages.${system}.default ];
         };
