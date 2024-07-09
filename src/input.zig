@@ -1,4 +1,6 @@
 const std = @import("std");
+const posix = std.posix;
+
 const ByteTrie = @import("trie.zig").ByteTrie;
 const terminfo = @import("terminfo");
 const Capability = terminfo.Strings.Capability;
@@ -277,12 +279,12 @@ pub fn build_capabilities_trie(allocator: std.mem.Allocator, term_info: TermInfo
     return trie;
 }
 
-fn read_input(tty: std.os.fd_t, buf: []u8) std.os.ReadError![]u8 {
+fn read_input(tty: posix.fd_t, buf: []u8) posix.ReadError![]u8 {
     var stream = std.io.fixedBufferStream(buf);
 
     while (true) {
         var segment_buf: [16]u8 = undefined;
-        const segment_len = try std.os.read(tty, &segment_buf);
+        const segment_len = try posix.read(tty, &segment_buf);
 
         // append the input segment to the input buffer
         _ = stream.write(segment_buf[0..segment_len]) catch std.debug.panic("input was longer than 1KB", .{});
@@ -302,7 +304,7 @@ fn read_input(tty: std.os.fd_t, buf: []u8) std.os.ReadError![]u8 {
     }
 }
 
-pub fn input_thread_entry(tty: std.os.fd_t, trie: CapabilitiesTrie, event_queue: EventQueue(InputEvent)) !void {
+pub fn input_thread_entry(tty: posix.fd_t, trie: CapabilitiesTrie, event_queue: EventQueue(InputEvent)) !void {
     // it's stupid that I have to do this, andrewrk pls fix
     // immutable parameters are fine, just allow shadowing
     var event_queue_var = event_queue;

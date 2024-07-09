@@ -1,4 +1,6 @@
 const std = @import("std");
+const posix = std.posix;
+
 const config = @import("config.zig");
 
 var log_file_m: ?std.fs.File = null;
@@ -29,7 +31,7 @@ fn get_log_file() ?std.fs.File {
 /// Opens the log file for reading and writing.
 fn open_cache_log_file() ?std.fs.File {
     var dir: std.fs.Dir = config.get_config_dir() orelse return null;
-    defer std.os.close(dir.fd);
+    defer posix.close(dir.fd);
 
     return dir.createFile("log", .{
         .read = true,

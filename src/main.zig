@@ -9,8 +9,8 @@ const EventQueue = @import("event_queue.zig").EventQueue;
 const keymap = @import("keymap.zig");
 const Editor = @import("editor.zig").Editor;
 
-pub const std_options = struct {
-    pub const logFn = log.log_fn;
+pub const std_options = std.Options{
+    .logFn = log.log_fn,
 };
 
 fn FixedStringBuffer(comptime N: usize) type {

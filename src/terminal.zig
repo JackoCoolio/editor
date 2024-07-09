@@ -1,4 +1,5 @@
 const std = @import("std");
+const posix = std.posix;
 const TermInfo = @import("terminfo").TermInfo;
 const Parameter = @import("terminfo").Strings.Parameter;
 const input = @import("input.zig");
@@ -10,63 +11,71 @@ pub const Terminal = struct {
 
     termios: Termios,
 
-    tty: std.os.fd_t,
-    winsize: std.os.linux.winsize,
+    tty: posix.fd_t,
+    winsize: posix.winsize,
 
     terminfo: TermInfo,
 
     pub const Termios = struct {
-        tty: std.os.fd_t,
-        cooked: std.os.termios,
-        raw: std.os.termios,
+        tty: posix.fd_t,
+        cooked: posix.termios,
+        raw: posix.termios,
         is_cooked: bool,
 
-        pub const Error = std.os.TermiosSetError || std.os.TermiosGetError;
+        pub const Error = posix.TermiosSetError || posix.TermiosGetError;
 
-        pub fn init(tty: std.os.fd_t) std.os.TermiosGetError!Termios {
+        pub fn init(tty: posix.fd_t) posix.TermiosGetError!Termios {
             // get the current termios
-            const old_termios = try std.os.tcgetattr(tty);
+            const old_termios = try posix.tcgetattr(tty);
 
             // save old (cooked) termios
             const cooked = old_termios;
 
             var new_termios = old_termios;
 
-            const flags = std.os.linux;
-
             // source for flag descriptions: https://www.gnu.org/software/libc/manual/html_node/Terminal-Modes.html
 
-            // IGNBRK: don't ignore break condition on input (a break condition is a sequence of >8 zero bits)
-            // BRKINT: on break condition, pass it to application
-            // PARMRK: break condition is passed to application as '\0'
-            // ISTRIP: don't strip input bytes to 7 bits
-            // INLCR:  don't send LF as CR
-            // IGNCR:  don't discard CR
-            // ICRNL:  don't send CR as NL
-            // IXON:   disable C-S and C-Q as START and STOP characters
-            new_termios.iflag &= ~(flags.IGNBRK | flags.BRKINT | flags.PARMRK | flags.ISTRIP | flags.INLCR | flags.IGNCR | flags.ICRNL | flags.IXON);
+            // don't ignore break condition on input (a break condition is a sequence of >8 zero bits)
+            new_termios.iflag.IGNBRK = false;
+            // on break condition, pass it to application
+            new_termios.iflag.BRKINT = false;
+            // break condition is passed to application as '\0'
+            new_termios.iflag.PARMRK = false;
+            // don't strip input bytes to 7 bits
+            new_termios.iflag.ISTRIP = false;
+            // don't send LF as CR
+            new_termios.iflag.INLCR = false;
+            // don't discard CR
+            new_termios.iflag.IGNCR = false;
+            // don't send CR as NL
+            new_termios.iflag.ICRNL = false;
+            // disable C-S and C-Q as START and STOP characters
+            new_termios.iflag.IXON = false;
 
-            // OPOST:  send characters as-is
-            new_termios.oflag &= ~(flags.OPOST);
+            // send characters as-is
+            new_termios.oflag.OPOST = false;
 
-            // CSIZE:  reset size bits to zero (https://stackoverflow.com/a/31999982)
-            // PARENB: don't generate parity bit
-            new_termios.cflag &= ~(flags.CSIZE | flags.PARENB);
-            // CS8:    set byte size to 8 bits
-            new_termios.cflag |= flags.CS8;
+            // set byte size to 8 bits
+            new_termios.cflag.CSIZE = .CS8;
+            // don't generate parity bit
+            new_termios.cflag.PARENB = false;
 
             // ECHO:   don't echo input back to terminal
+            new_termios.lflag.ECHO = false;
             // ECHONL: don't echo NL if ICANON is set (redundant)
+            new_termios.lflag.ECHONL = false;
             // ICANON: don't wait for LF to read input
+            new_termios.lflag.ICANON = false;
             // ISIG:   ignore C-C, C-Z, C-\ (https://www.gnu.org/software/libc/manual/html_node/Signal-Characters.html)
+            new_termios.lflag.ISIG = false;
             // IEXTEN: disable C-V on some systems (BSD, GNU/Linux, GNU/Herd)
-            new_termios.lflag &= ~(flags.ECHO | flags.ECHONL | flags.ICANON | flags.ISIG | flags.IEXTEN);
+            new_termios.lflag.IEXTEN = false;
 
             // timeout after 0 seconds so we don't block
-            new_termios.cc[flags.V.TIME] = 0;
+            new_termios.cc[@intFromEnum(posix.V.TIME)] = 0;
 
             // just return 0 if no input was detected
-            new_termios.cc[flags.V.MIN] = 0;
+            new_termios.cc[@intFromEnum(posix.V.MIN)] = 0;
 
             const raw = new_termios;
 
@@ -79,30 +88,30 @@ pub const Terminal = struct {
         }
 
         /// Restore the old termios.
-        pub fn deinit(self: *Termios) std.os.TermiosSetError!void {
+        pub fn deinit(self: *Termios) posix.TermiosSetError!void {
             try self.makeCooked();
         }
 
         /// Enter raw mode.
-        pub fn makeRaw(self: *Termios) std.os.TermiosSetError!void {
+        pub fn makeRaw(self: *Termios) posix.TermiosSetError!void {
             // don't bother making raw terminal raw again
             if (!self.is_cooked) {
                 return;
             }
 
-            try std.os.tcsetattr(self.tty, std.os.linux.TCSA.FLUSH, self.raw);
+            try posix.tcsetattr(self.tty, std.os.linux.TCSA.FLUSH, self.raw);
 
             self.is_cooked = false;
         }
 
         // Enter cooked mode.
-        pub fn makeCooked(self: *Termios) std.os.TermiosSetError!void {
+        pub fn makeCooked(self: *Termios) posix.TermiosSetError!void {
             // don't bother making cooked terminal cooked again
             if (self.is_cooked) {
                 return;
             }
 
-            try std.os.tcsetattr(self.tty, std.os.linux.TCSA.FLUSH, self.cooked);
+            try posix.tcsetattr(self.tty, std.os.linux.TCSA.FLUSH, self.cooked);
 
             self.is_cooked = true;
         }
@@ -110,7 +119,7 @@ pub const Terminal = struct {
 
     pub const InitError = error{
         InvalidTerm,
-    } || std.os.OpenError || std.os.WriteError || Termios.Error || FetchTermDimensionsError || TermInfo.InitFromEnvError;
+    } || std.fs.File.OpenError || std.fs.File.WriteError || Termios.Error || FetchTermDimensionsError || TermInfo.InitFromEnvError;
 
     /// Create a new terminal.
     pub fn init(allocator: std.mem.Allocator) InitError!Self {
@@ -120,11 +129,11 @@ pub const Terminal = struct {
         errdefer terminal.terminfo.deinit();
 
         // open the TTY file
-        const tty = try std.os.open("/dev/tty", std.os.linux.O.RDWR, 0);
+        const tty = try posix.open("/dev/tty", .{}, 0);
         terminal.tty = tty;
 
         // close it on err
-        errdefer std.os.close(terminal.tty);
+        errdefer posix.close(terminal.tty);
 
         // initialize termios
         terminal.termios = try Termios.init(tty);
@@ -166,24 +175,24 @@ pub const Terminal = struct {
 
     /// Reads input from the terminal into the given buffer.
     /// Returns a slice to the written data.
-    pub fn getInput(self: *const Self, buf: []u8) std.os.ReadError![]u8 {
+    pub fn getInput(self: *const Self, buf: []u8) std.fs.File.ReadError![]u8 {
         const len = try std.os.read(self.tty, buf);
         return buf[0..len];
     }
 
     /// Writes a sequence of bytes to TTY.
-    pub fn write(self: *const Self, seq: []const u8) std.os.WriteError!usize {
+    pub fn write(self: *const Self, seq: []const u8) std.fs.File.WriteError!usize {
         // TODO: check if correct number of bytes were written, and retry until successful?
-        return std.os.write(self.tty, seq);
+        return std.os.linux.write(self.tty, seq.ptr, seq.len);
     }
 
-    pub fn write_fmt(self: *const Self, comptime fmt: []const u8, args: anytype) std.os.WriteError!void {
+    pub fn write_fmt(self: *const Self, comptime fmt: []const u8, args: anytype) std.fs.File.WriteError!void {
         const S = struct {
-            pub fn write_fn(context: *const Self, bytes: []const u8) std.os.WriteError!usize {
+            pub fn write_fn(context: *const Self, bytes: []const u8) std.fs.File.WriteError!usize {
                 return context.write(bytes);
             }
         };
-        const writer = std.io.Writer(*const Self, std.os.WriteError, S.write_fn){
+        const writer = std.io.Writer(*const Self, std.fs.File.WriteError, S.write_fn){
             .context = self,
         };
         return try std.fmt.format(writer, fmt, args);
@@ -200,10 +209,10 @@ pub const Terminal = struct {
 
         self.terminfo.deinit();
 
-        std.os.close(self.tty);
+        _ = std.os.linux.close(self.tty);
     }
 
-    pub const ExecError = error{FnUnavailableError} || std.os.WriteError;
+    pub const ExecError = error{FnUnavailableError} || std.fs.File.WriteError;
 
     /// Executes the given capability. Returns an error if the capability is
     /// unavailable or the TTY could not be written to.

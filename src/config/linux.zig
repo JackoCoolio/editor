@@ -1,8 +1,9 @@
 const std = @import("std");
+const posix = std.posix;
 
 /// Returns the current user's home directory if `$HOME` is set, otherwise null.
 fn get_home_dir() ?std.fs.Dir {
-    const path = std.os.getenv("HOME") orelse return null;
+    const path = posix.getenv("HOME") orelse return null;
     return std.fs.openDirAbsolute(path, .{}) catch null;
 }
 
