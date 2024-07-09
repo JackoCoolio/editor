@@ -13,7 +13,7 @@
       systems = [ "x86_64-linux" ];
       perSystem = { config, self', inputs', pkgs, system, ... }:
       let
-        zig-bin = inputs'.zig.packages.master;
+        zig-bin = inputs'.zig.packages."0.13.0";
         zls-bin = inputs'.zls.packages.default;
         deps = {
           build =
