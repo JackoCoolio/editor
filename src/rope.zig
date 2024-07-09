@@ -31,7 +31,7 @@ pub const Rope = struct {
     /// The string is cloned, so the caller must still free it.
     pub fn init(alloc: Allocator, str: []const u8) Allocator.Error!*Rope {
         // allocate root
-        var rope_ptr = try alloc.create(Rope);
+        const rope_ptr = try alloc.create(Rope);
         errdefer alloc.destroy(rope_ptr);
 
         // if the string can fit in a leaf, the root will just be a leaf
@@ -60,8 +60,6 @@ pub const Rope = struct {
                     .cursor_span = end_pos,
                 },
             };
-            std.log.info("init:", .{});
-            try rope_ptr.dump_with_depth(0);
             return rope_ptr;
         }
         // otherwise, we have to split the rope
@@ -91,8 +89,6 @@ pub const Rope = struct {
             },
             .stats = Stats.calculate(left.stats, right.stats),
         };
-        std.log.info("init:", .{});
-        try rope_ptr.dump_with_depth(0);
         return rope_ptr;
     }
 
