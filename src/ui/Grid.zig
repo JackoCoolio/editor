@@ -12,7 +12,7 @@ dirty: bool,
 
 pub fn init(alloc: Allocator, width: usize, height: usize) Allocator.Error!Grid {
     const size = width * height;
-    var chars = try alloc.alloc(Grapheme, size);
+    const chars = try alloc.alloc(Grapheme, size);
     @memset(chars, std.mem.zeroes(Grapheme));
 
     return .{

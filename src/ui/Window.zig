@@ -70,7 +70,7 @@ fn move_cursor(self: *Window, buffer: ?*Buffer, comptime dir: Direction, n: u32)
     const line_len = buffer_u.data.get_line_length(self.cursor_pos.row) orelse unreachable;
     self.cursor_pos.col = @min(self.desired_col, @as(u32, @intCast(line_len)));
 
-    var grid = &(self.grid orelse return);
+    const grid = &(self.grid orelse return);
     if (self.cursor_pos.row < self.scroll_offset) {
         // screen needs to scroll up
         self.set_scroll(self.cursor_pos.row);
@@ -96,7 +96,7 @@ fn handle_action(dyn: *anyopaque, contextual_action: ContextualAction, editor: *
 
     const self: *Window = @ptrCast(@alignCast(dyn));
 
-    var buffer = editor.get_buffer(self.buffer);
+    const buffer = editor.get_buffer(self.buffer);
 
     const action = contextual_action.action;
     const mode = contextual_action.mode;

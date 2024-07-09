@@ -28,7 +28,7 @@ fn FixedStringBuffer(comptime N: usize) type {
         }
 
         pub fn append(self: *Self, comptime fmt: []const u8, args: anytype) !void {
-            var written = try std.fmt.bufPrint(self.buf[self.size..], fmt, args);
+            const written = try std.fmt.bufPrint(self.buf[self.size..], fmt, args);
             self.size += written.len;
         }
 

@@ -319,7 +319,7 @@ pub const Rope = struct {
     pub fn concat(left: *Rope, right: *Rope) Allocator.Error!*Rope {
         std.debug.assert(left.alloc.ptr == right.alloc.ptr);
         const alloc = left.alloc;
-        var rope_ptr = try alloc.create(Rope);
+        const rope_ptr = try alloc.create(Rope);
         rope_ptr.* = Rope{
             .alloc = alloc,
             .data = .{
@@ -582,7 +582,7 @@ pub const Rope = struct {
     pub fn dump_with_depth(self: *const Rope, depth: usize) Allocator.Error!void {
         const scope = std.log.scoped(.rope);
 
-        var indent = try self.alloc.alloc(u8, depth * 2);
+        const indent = try self.alloc.alloc(u8, depth * 2);
         defer self.alloc.free(indent);
         @memset(indent, ' ');
 
@@ -609,7 +609,7 @@ pub const Rope = struct {
     pub fn dump_stats_with_depth(self: *const Rope, depth: usize) Allocator.Error!void {
         const scope = std.log.scoped(.rope_stats);
 
-        var indent = try self.alloc.alloc(u8, depth * 2);
+        const indent = try self.alloc.alloc(u8, depth * 2);
         defer self.alloc.free(indent);
         @memset(indent, ' ');
 
@@ -655,8 +655,8 @@ test "iter" {
 
 test "concat" {
     const alloc = std.testing.allocator;
-    var left = try Rope.init(alloc, "Hello, ");
-    var right = try Rope.init(alloc, "world!");
+    const left = try Rope.init(alloc, "Hello, ");
+    const right = try Rope.init(alloc, "world!");
 
     const rope = try Rope.concat(left, right);
     defer rope.destroy();

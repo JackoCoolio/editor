@@ -300,7 +300,7 @@ pub const ActionContext = struct {
     /// queue.
     fn handle_queued_keys(self: *ActionContext) std.mem.Allocator.Error!void {
         var rem_keys: []const Key = self.key_queue.constSlice();
-        var curr_mode = self.get_curr_mode();
+        const curr_mode = self.get_curr_mode();
         while (rem_keys.len > 0) {
             if (self.keymaps.get_from_mode(curr_mode).lookup_longest(rem_keys)) |longest| {
                 // we found an action for this key sequence

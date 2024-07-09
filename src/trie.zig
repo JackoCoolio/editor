@@ -245,7 +245,7 @@ test "lookup_longest" {
     try trie.insert_sequence("foob", 58);
 
     try std.testing.expect(trie.lookup_longest("foo").?.value == 42);
-    var longest = trie.lookup_longest("foobar").?;
+    const longest = trie.lookup_longest("foobar").?;
     try std.testing.expect(longest.value == 58);
     try std.testing.expect(longest.eaten == 4);
 }

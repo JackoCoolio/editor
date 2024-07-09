@@ -31,7 +31,7 @@ pub fn EventQueue(comptime E: type) type {
                 .data = event,
             };
 
-            var node_ptr = try self.allocator.create(@TypeOf(node));
+            const node_ptr = try self.allocator.create(@TypeOf(node));
             node_ptr.* = node;
 
             self.inner.put(node_ptr);
