@@ -233,14 +233,14 @@ pub const Key = struct {
 
         // shifted keys
         if (utf8.cp_to_lower(cp)) |unshifted| {
-            std.log.info("0x{x} is shifted from 0x{x}", .{cp, unshifted});
+            std.log.info("0x{x} is shifted from 0x{x}", .{ cp, unshifted });
             return .{
                 .code = .{
                     .unicode = unshifted,
                 },
                 .modifiers = .{
                     .shift = true,
-                }
+                },
             };
         }
 
@@ -248,7 +248,7 @@ pub const Key = struct {
         return .{
             .code = .{
                 .unicode = cp,
-            }
+            },
         };
     }
 };
