@@ -210,22 +210,26 @@ fn get_visible_lines(self: *const Window, buffer: *const Buffer) [][]const u8 {
 }
 
 fn render(dyn: *anyopaque, ctx: Compositor.RenderContext) !?*const Grid {
+    const log = std.log.scoped(.render);
     const self: *Window = @ptrCast(@alignCast(dyn));
     const grid = if (self.grid) |*grid| grid else return null;
 
     const buffer = ctx.editor.get_buffer(self.buffer) orelse return null;
 
-    std.log.info("lines[{}..{}] (len {})", .{ self.scroll_offset, self.scroll_offset + grid.height, buffer.data.get_line_count() });
+    log.info("lines[{}..{}] (len {})", .{ self.scroll_offset, self.scroll_offset + grid.height, buffer.data.get_line_count() });
     var lines = try buffer.data.lines(self.alloc);
     defer lines.deinit();
 
     // TODO: make this more efficient
     // you should be able to start LineIter at line i, instead of just skipping
     // i lines
+
+    log.debug("skipping {} lines", .{self.scroll_offset});
     for (0..self.scroll_offset) |_| {
         self.alloc.free(try lines.next() orelse break);
     }
 
+    log.debug("rendering {} lines", .{buffer.data.get_line_count()});
     for (self.scroll_offset..@min(self.scroll_offset + grid.height, buffer.data.get_line_count())) |line_num| {
         // the parentheses probably aren't necessary here, but i think it makes
         // more sense with them

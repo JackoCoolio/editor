@@ -184,6 +184,7 @@ pub const Key = struct {
 
     pub const FromCodepointError = error{UnknownC0} || std.mem.Allocator.Error;
     pub fn from_utf8_char(char: []const u8) FromCodepointError!Key {
+        const log = std.log.scoped(.key_from_utf8_char);
         const cp = utf8.char_to_cp(char);
 
         // NUL, which by convention is C-Space
@@ -200,6 +201,7 @@ pub const Key = struct {
 
         // check for C0 range keys
         if (cp <= 0x20) {
+            log.debug("key is in C0 range", .{});
             const sym: ?Symbol = switch (cp) {
                 0x1b => .escape,
                 0x08 => .backspace,
@@ -220,6 +222,7 @@ pub const Key = struct {
 
         // control alphas
         if (cp <= 26) {
+            log.debug("key is a control alpha", .{});
             return .{
                 .code = .{
                     // not 0x61, because ^A == 0x01
@@ -233,7 +236,7 @@ pub const Key = struct {
 
         // shifted keys
         if (utf8.cp_to_lower(cp)) |unshifted| {
-            std.log.info("0x{x} is shifted from 0x{x}", .{ cp, unshifted });
+            log.debug("0x{x} is shifted from 0x{x}", .{ cp, unshifted });
             return .{
                 .code = .{
                     .unicode = unshifted,
@@ -271,7 +274,7 @@ pub fn build_capabilities_trie(allocator: std.mem.Allocator, term_info: TermInfo
 
     var iter = term_info.strings.iter();
     while (iter.next()) |item| {
-        log.info("insert: '{s}' -> '{s}'", .{ std.fmt.fmtSliceEscapeLower(item.value), @tagName(item.capability) });
+        log.debug("insert: '{s}' -> '{s}'", .{ std.fmt.fmtSliceEscapeLower(item.value), @tagName(item.capability) });
         try trie.insert_sequence(item.value, item.capability);
     }
     return trie;
@@ -303,6 +306,8 @@ fn read_input(tty: posix.fd_t, buf: []u8) posix.ReadError![]u8 {
 }
 
 pub fn input_thread_entry(tty: posix.fd_t, trie: CapabilitiesTrie, event_queue: EventQueue(InputEvent)) !void {
+    const log = std.log.scoped(.input);
+
     // it's stupid that I have to do this, andrewrk pls fix
     // immutable parameters are fine, just allow shadowing
     var event_queue_var = event_queue;
@@ -319,12 +324,16 @@ pub fn input_thread_entry(tty: posix.fd_t, trie: CapabilitiesTrie, event_queue: 
             if (longest_n) |longest| {
                 const cap = longest.value;
 
+                log.debug("received capability: {s}", .{@tagName(cap)});
+
                 try event_queue_var.put(.{ .key = Key.from_capability(cap) });
 
                 input = input[longest.eaten..];
             } else {
                 const char = utf8.recognize(input);
                 input = input[char.len..];
+
+                log.debug("received bytes: {x}", .{char});
                 try event_queue_var.put(.{ .key = try Key.from_utf8_char(char) });
             }
         }

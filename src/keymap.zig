@@ -299,6 +299,7 @@ pub const ActionContext = struct {
     /// Consumes queued keys, and appends the generated actions to the action
     /// queue.
     fn handle_queued_keys(self: *ActionContext) std.mem.Allocator.Error!void {
+        const log = std.log.scoped(.key_queue);
         var rem_keys: []const Key = self.key_queue.constSlice();
         const curr_mode = self.get_curr_mode();
         while (rem_keys.len > 0) {
@@ -309,9 +310,11 @@ pub const ActionContext = struct {
                 // if the action is a .change_mode action, we need to adjust the mode
                 // or the rest of the keys won't make sense.
                 // we also need to convey this information to the editor somehow
+                log.info("action: {}", .{action.down});
                 try self.action_queue.put(.{ .action = action, .mode = curr_mode });
                 switch (action) {
                     .change_mode => |new_mode| {
+                        log.info("new mode: {s}", .{@tagName(new_mode)});
                         self.mode = new_mode;
                     },
                     else => {},
