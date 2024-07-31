@@ -188,15 +188,13 @@ pub const Key = struct {
 
         // NUL, which by convention is C-Space
         if (cp == 0) {
-            // for some reason, zig fmt wants to turn this into spaghetti
-            // zig fmt: off
             return .{
                 .code = .{
                     .symbol = .space,
                 },
                 .modifiers = .{
                     .control = true,
-                }
+                },
             };
         }
 
