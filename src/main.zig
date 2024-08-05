@@ -87,7 +87,7 @@ pub fn main() !void {
     errdefer terminal.termios.makeCooked() catch {};
 
     init_log.info("clearing screen", .{});
-    try terminal.exec(.clear_screen);
+    try terminal.exec(.clear_screen, true);
 
     {
         // main loop
@@ -98,8 +98,8 @@ pub fn main() !void {
     const cleanup_log = std.log.scoped(.cleanup);
 
     cleanup_log.info("resetting terminal and cursor position", .{});
-    try terminal.exec(.clear_screen);
-    try terminal.exec(.cursor_home);
+    try terminal.exec(.clear_screen, true);
+    try terminal.exec(.cursor_home, true);
 
     // reset termios to cooked mode
     try terminal.termios.makeCooked();

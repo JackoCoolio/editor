@@ -192,22 +192,22 @@ pub const Compositor = struct {
 
         if (should_redraw) {
             // std.time.sleep(33 * std.time.ns_per_ms);
-            try terminal.exec(.cursor_home);
-            try terminal.exec(.cursor_invisible);
+            try terminal.exec(.cursor_home, false);
+            try terminal.exec(.cursor_invisible, false);
             for (0..self.grid.height) |row| {
                 const bytes = self.grid.get_row_bytes(row);
                 _ = try terminal.write(bytes);
-                try terminal.exec(.clr_eol);
+                try terminal.exec(.clr_eol, false);
                 if (row < self.grid.height - 1) {
-                    try terminal.exec(.cursor_down);
-                    try terminal.exec_with_args(self.alloc, .column_address, &[_]Parameter{.{ .integer = 0 }});
+                    try terminal.exec(.cursor_down, false);
+                    try terminal.exec_with_args(self.alloc, .column_address, &[_]Parameter{.{ .integer = 0 }}, false);
                 }
             }
         }
 
         if (try self.get_cursor_pos(ctx)) |pos| {
-            try terminal.exec_with_args(self.alloc, .cursor_address, &[_]Parameter{ .{ .integer = @intCast(pos.row) }, .{ .integer = @intCast(pos.col) } });
-            try terminal.exec(.cursor_visible);
+            try terminal.exec_with_args(self.alloc, .cursor_address, &[_]Parameter{ .{ .integer = @intCast(pos.row) }, .{ .integer = @intCast(pos.col) } }, false);
+            try terminal.exec(.cursor_visible, false);
         }
     }
 };
