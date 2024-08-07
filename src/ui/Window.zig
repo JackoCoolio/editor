@@ -149,8 +149,10 @@ fn handle_action(dyn: *anyopaque, contextual_action: ContextualAction, editor: *
                 std.log.info("inserting at ({}, {})", .{ cursor_pos.row, cursor_pos.col });
                 try buffer_u.data.dump_with_depth(0);
 
-                try buffer_u.insert_bytes_at_position(cursor_pos, &bytes);
+                const bytes_slice = std.mem.sliceTo(&bytes, 0);
+                try buffer_u.insert_bytes_at_position(cursor_pos, bytes_slice);
                 self.move_cursor(buffer, .right, 1);
+                log.info("current cursor location: ({}, {}), scroll: {}", .{ self.cursor_pos.row, self.cursor_pos.col, self.scroll_offset });
             }
         },
     }

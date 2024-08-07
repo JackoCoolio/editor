@@ -324,7 +324,7 @@ pub const ActionContext = struct {
                 const key = rem_keys[0];
                 rem_keys = rem_keys[1..];
 
-                var buf: [4]u8 = undefined;
+                var buf = std.mem.zeroes([4]u8);
                 if (key.get_utf8(&buf)) |_| {
                     try self.action_queue.put(.{ .action = Action{ .insert_bytes = buf }, .mode = curr_mode });
                 }
