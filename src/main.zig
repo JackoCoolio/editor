@@ -72,7 +72,7 @@ pub fn main() !void {
     defer trie.deinit();
 
     init_log.info("spawning input thread", .{});
-    const handle = try std.Thread.spawn(.{}, input.input_thread_entry, .{ terminal.tty, trie, input_event_queue });
+    const handle = try std.Thread.spawn(.{}, input.input_thread_entry, .{ terminal.tty, trie, &input_event_queue });
     handle.detach();
 
     init_log.info("creating editor and starting compositor", .{});

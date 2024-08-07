@@ -305,7 +305,7 @@ fn read_input(tty: posix.fd_t, buf: []u8) posix.ReadError![]u8 {
     }
 }
 
-pub fn input_thread_entry(tty: posix.fd_t, trie: CapabilitiesTrie, event_queue: EventQueue(InputEvent)) !void {
+pub fn input_thread_entry(tty: posix.fd_t, trie: CapabilitiesTrie, event_queue: *EventQueue(InputEvent)) !void {
     const log = std.log.scoped(.input);
 
     // it's stupid that I have to do this, andrewrk pls fix
