@@ -46,7 +46,7 @@ pub fn element(self: *Window) Element {
 }
 
 const Direction = enum { up, down, left, right };
-fn move_cursor(self: *Window, buffer: ?*Buffer, comptime dir: Direction, n: u32) void {
+fn move_cursor(self: *Window, buffer: ?*const Buffer, comptime dir: Direction, n: u32) void {
     const scope = std.log.scoped(.move_cursor);
 
     const buffer_u = buffer orelse return;
