@@ -95,7 +95,7 @@ pub fn init_from_file(alloc: Allocator, file_path: []const u8, read_only: bool) 
         .mode = .read_only,
     };
 
-    const file = try std.fs.openFileAbsolute(file_path, flags);
+    const file = try std.fs.cwd().openFile(file_path, flags);
 
     const data = file.readToEndAlloc(alloc, std.math.maxInt(usize)) catch unreachable;
     return try Buffer.init_from_data(alloc, data, if (read_only) null else file_path);
