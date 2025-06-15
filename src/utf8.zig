@@ -196,6 +196,7 @@ pub fn char_to_cp(bytes: []const u8) Codepoint {
         4 => @as(Codepoint, @as(u21, char[0] & 0b00000_111) << 18 | @as(u21, char[1] & 0b00_111111) << 12 | @as(u21, char[2] & 0b00_111111) << 6 | @as(u21, char[3] & 0b00_111111)),
         else => unreachable,
     };
+    // zig fmt: on
 }
 
 /// Returns an allocated buffer with the UTF-8 encoding of the given Unicode
@@ -379,4 +380,3 @@ pub fn cp_to_lower(cp: Codepoint) ?Codepoint {
 
     return search_entries(&unicode.to_lower_table, cp);
 }
-
