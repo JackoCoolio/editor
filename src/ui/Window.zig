@@ -137,7 +137,7 @@ fn handle_action(dyn: *anyopaque, contextual_action: ContextualAction, editor: *
         },
         .quit => {
             log.info("quitting", .{});
-            std.process.exit(0);
+            editor.should_exit = true;
         },
         .change_mode => |new_mode| {
             log.info("changing mode to {s}", .{@tagName(new_mode)});
