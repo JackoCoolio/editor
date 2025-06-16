@@ -77,6 +77,7 @@ pub fn main() !void {
 
     init_log.info("creating editor and starting compositor", .{});
     var editor = try Editor.init(allocator, &terminal);
+    defer editor.deinit();
     try editor.open_file(filename, true);
 
     var exit_message = FixedStringBuffer(1024).init();

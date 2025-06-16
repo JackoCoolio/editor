@@ -116,3 +116,7 @@ pub fn init_from_data(alloc: Allocator, data: []u8, save_location: ?[]const u8) 
 
     return buffer;
 }
+
+pub fn deinit(self: Buffer) void {
+    self.data.destroy();
+}

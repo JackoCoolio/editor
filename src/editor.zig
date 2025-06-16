@@ -56,6 +56,9 @@ pub const Editor = struct {
     }
 
     pub fn deinit(self: Editor) void {
+        for (self.buffers.items) |buffer| {
+            buffer.deinit();
+        }
         self.buffers.deinit();
     }
 
