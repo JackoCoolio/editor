@@ -54,26 +54,29 @@ fn open_log_file() ?std.fs.File {
 }
 
 pub fn log_fn(comptime message_level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral), comptime format: []const u8, args: anytype) void {
-    const log_file = get_log_file() orelse std.debug.panic("no log file", .{});
+    logFnFallible(message_level, scope, format, args) catch std.debug.panic("failed to log", .{});
+}
+
+fn logFnFallible(comptime message_level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral), comptime format: []const u8, args: anytype) !void {
+    const log_file = get_log_file() orelse return error.NoLogFile;
 
     // keep track of highest log severity to inform user to check logs if needed
     highest_log_severity = @max(highest_log_severity, level_to_severity(message_level));
 
     const scope_str = @tagName(scope);
 
-    var msg_buf: [1024]u8 = undefined;
-    const msg_buf_s = std.fmt.bufPrint(&msg_buf, format, args) catch unreachable;
-
-    var log_buf: [2048]u8 = undefined;
-    const log_buf_s = std.fmt.bufPrint(&log_buf, "{s}:\t({s}): {s}\n", .{ message_level.asText(), scope_str, msg_buf_s }) catch unreachable;
-
     const writer = log_file.writer();
-    _ = writer.write(log_buf_s) catch {};
+    try writer.print("{s}:\t({s}): ", .{ message_level.asText(), scope_str });
+    try writer.print(format, args);
+    if (format[format.len - 1] != '\n') {
+        try writer.writeByte('\n');
+    }
 }
 
 pub fn close_log_file() void {
     if (log_file_m) |log_file| {
         log_file.sync() catch {};
         log_file.close();
+        log_file_m = null;
     }
 }
