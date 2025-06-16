@@ -48,6 +48,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
     if (args.len < 2) {
         const stderr_file = std.io.getStdErr().writer();
         var bw = std.io.bufferedWriter(stderr_file);
