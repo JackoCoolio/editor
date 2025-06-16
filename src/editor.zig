@@ -59,6 +59,7 @@ pub const Editor = struct {
         for (self.buffers.items) |buffer| {
             buffer.deinit();
         }
+        self.compositor.deinit();
         self.buffers.deinit();
     }
 

@@ -1,4 +1,5 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const posix = std.posix;
 const TermInfo = @import("terminfo").TermInfo;
 const Parameter = @import("terminfo").Strings.Parameter;
@@ -7,8 +8,6 @@ const Trie = @import("trie.zig").Trie;
 const Capability = @import("terminfo").Strings.Capability;
 
 pub const Terminal = struct {
-    const Self = @This();
-
     termios: Termios,
 
     tty: posix.fd_t,
@@ -135,14 +134,14 @@ pub const Terminal = struct {
     } || std.fs.File.OpenError || std.fs.File.WriteError || Termios.Error || FetchTermDimensionsError || TermInfo.InitFromEnvError;
 
     /// Create a new terminal.
-    pub fn init(allocator: std.mem.Allocator) InitError!Self {
+    pub fn init(allocator: std.mem.Allocator) InitError!Terminal {
         const log = std.log.scoped(.terminal_init);
 
-        var terminal: Self = undefined;
+        var terminal: Terminal = undefined;
 
         log.info("loading terminfo", .{});
         terminal.terminfo = try TermInfo.initFromEnv(allocator);
-        errdefer terminal.terminfo.deinit();
+        errdefer terminal.terminfo.deinit(allocator);
         log.info("done", .{});
 
         // open the TTY file
@@ -172,7 +171,7 @@ pub const Terminal = struct {
         IoctlError,
     };
     /// Update the terminal dimensions.
-    fn fetchTermDimensions(self: *Self) FetchTermDimensionsError!void {
+    fn fetchTermDimensions(self: *Terminal) FetchTermDimensionsError!void {
         var winsize: posix.winsize = undefined;
         // this is not ideal, but I can't find this constant anywhere in the Zig
         // standard library and I'd rather not link against libc if I don't have
@@ -185,34 +184,34 @@ pub const Terminal = struct {
     }
 
     /// Returns the number of columns in this Terminal.
-    pub fn getWidth(self: *const Self) u16 {
+    pub fn getWidth(self: *const Terminal) u16 {
         return self.winsize.ws_col;
     }
 
     /// Returns the number of rows in this Terminal.
-    pub fn getHeight(self: *const Self) u16 {
+    pub fn getHeight(self: *const Terminal) u16 {
         return self.winsize.ws_row;
     }
 
     /// Reads input from the terminal into the given buffer.
     /// Returns a slice to the written data.
-    pub fn getInput(self: *const Self, buf: []u8) std.fs.File.ReadError![]u8 {
+    pub fn getInput(self: *const Terminal, buf: []u8) std.fs.File.ReadError![]u8 {
         const len = try std.os.read(self.tty, buf);
         return buf[0..len];
     }
 
     /// Writes a sequence of bytes to TTY.
-    pub fn write(self: *const Self, seq: []const u8) std.fs.File.WriteError!usize {
+    pub fn write(self: *const Terminal, seq: []const u8) std.fs.File.WriteError!usize {
         return posix.write(self.tty, seq);
     }
 
-    pub fn write_fmt(self: *const Self, comptime fmt: []const u8, args: anytype) std.fs.File.WriteError!void {
+    pub fn write_fmt(self: *const Terminal, comptime fmt: []const u8, args: anytype) std.fs.File.WriteError!void {
         const S = struct {
-            pub fn write_fn(context: *const Self, bytes: []const u8) std.fs.File.WriteError!usize {
+            pub fn write_fn(context: *const Terminal, bytes: []const u8) std.fs.File.WriteError!usize {
                 return context.write(bytes);
             }
         };
-        const writer = std.io.Writer(*const Self, std.fs.File.WriteError, S.write_fn){
+        const writer = std.io.Writer(*const Terminal, std.fs.File.WriteError, S.write_fn){
             .context = self,
         };
         return try std.fmt.format(writer, fmt, args);
@@ -220,14 +219,14 @@ pub const Terminal = struct {
 
     /// Deinitialize this terminal.
     /// This restores the previous termios.
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: *Terminal, alloc: Allocator) void {
         self.termios.deinit() catch {
             std.log.warn("unable to restore cooked termios", .{});
         };
 
         self.exec(.keypad_local, true) catch {};
 
-        self.terminfo.deinit();
+        self.terminfo.deinit(alloc);
 
         posix.close(self.tty);
     }
@@ -236,7 +235,7 @@ pub const Terminal = struct {
 
     /// Executes the given capability. Returns an error if the capability is
     /// unavailable or the TTY could not be written to.
-    pub fn exec(self: *const Self, cap: Capability, comptime should_log: bool) ExecError!void {
+    pub fn exec(self: *const Terminal, cap: Capability, comptime should_log: bool) ExecError!void {
         const log = std.log.scoped(.terminal_exec);
 
         if (should_log) {
@@ -253,7 +252,7 @@ pub const Terminal = struct {
     }
 
     pub const ExecWithArgsError = ExecError || std.mem.Allocator.Error || error{ InvalidFormat, InvalidArguments };
-    pub fn exec_with_args(self: *const Self, alloc: std.mem.Allocator, cap: Capability, args: []const Parameter, comptime should_log: bool) ExecWithArgsError!void {
+    pub fn exec_with_args(self: *const Terminal, alloc: std.mem.Allocator, cap: Capability, args: []const Parameter, comptime should_log: bool) ExecWithArgsError!void {
         const log = std.log.scoped(.terminal_exec_with_args);
 
         if (should_log) {

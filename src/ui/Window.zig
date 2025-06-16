@@ -38,6 +38,7 @@ pub fn element(self: *Window) Element {
             .should_render = should_render,
             .render = render,
             .get_cursor_pos = get_cursor_pos,
+            .deinit = deinit,
         },
         .action_ctx = &self.action_ctx,
         .x = 0,
@@ -240,10 +241,19 @@ fn render(dyn: *anyopaque, ctx: Compositor.RenderContext) !?*const Grid {
 
         var graphemes = Graphemes.from(line);
         const slice = try graphemes.into_slice(self.alloc);
+        defer self.alloc.free(slice);
         grid.set_row_clear_after(line_num - self.scroll_offset, slice);
     }
 
     return grid;
+}
+
+fn deinit(dyn: *anyopaque) void {
+    const self: *Window = @ptrCast(@alignCast(dyn));
+    if (self.grid) |*grid| {
+        grid.deinit();
+    }
+    self.alloc.destroy(self);
 }
 
 pub const Group = struct {

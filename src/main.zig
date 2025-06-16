@@ -62,7 +62,7 @@ pub fn main() !void {
 
     init_log.info("initializing terminal", .{});
     var terminal = try Terminal.init(allocator);
-    defer terminal.deinit();
+    defer terminal.deinit(allocator);
 
     init_log.info("creating input event queue", .{});
     var input_event_queue = try EventQueue(InputEvent).init(allocator);

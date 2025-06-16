@@ -59,6 +59,14 @@ pub const Compositor = struct {
         };
     }
 
+    pub fn deinit(self: Compositor) void {
+        for (self.elements.items) |el| {
+            el.deinit();
+        }
+        self.elements.deinit();
+        self.grid.deinit();
+    }
+
     pub fn focus(self: *Compositor, idx: usize) !void {
         var ctx = .{
             .should_exit = false,
@@ -231,6 +239,7 @@ pub const Element = struct {
         render: *const fn (*anyopaque, Compositor.RenderContext) anyerror!?*const Grid,
         should_render: *const fn (*anyopaque, Compositor.RenderContext) anyerror!bool,
         get_cursor_pos: *const fn (*anyopaque, Compositor.RenderContext) anyerror!?Position,
+        deinit: *const fn (*anyopaque) void,
     };
 
     pub fn handle_action(self: *const Element, action: keymap.ContextualAction, editor: *Editor) !void {
@@ -251,6 +260,13 @@ pub const Element = struct {
 
     pub fn get_cursor_pos(self: *const Element, ctx: Compositor.RenderContext) !?Position {
         return try self.vtable.get_cursor_pos(self.ptr, ctx);
+    }
+
+    pub fn deinit(self: *const Element) void {
+        if (self.action_ctx) |ctx| {
+            ctx.deinit();
+        }
+        return self.vtable.deinit(self.ptr);
     }
 
     /// Checks if the element has any queued actions. If so, tells the

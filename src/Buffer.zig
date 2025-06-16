@@ -98,12 +98,13 @@ pub fn init_from_file(alloc: Allocator, file_path: []const u8, read_only: bool) 
     const file = try std.fs.cwd().openFile(file_path, flags);
 
     const data = file.readToEndAlloc(alloc, std.math.maxInt(usize)) catch unreachable;
+    defer alloc.free(data);
     return try Buffer.init_from_data(alloc, data, if (read_only) null else file_path);
 }
 
 /// Initializes a Buffer from `data`. The data must be managed by the given
 /// allocator.
-pub fn init_from_data(alloc: Allocator, data: []u8, save_location: ?[]const u8) Allocator.Error!Buffer {
+pub fn init_from_data(alloc: Allocator, data: []const u8, save_location: ?[]const u8) Allocator.Error!Buffer {
     var buffer: Buffer = .{
         .alloc = alloc,
         .data = try Rope.init(alloc, data),
